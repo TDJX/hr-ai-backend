@@ -462,3 +462,55 @@ class InterviewRoomService:
         except Exception as e:
             print(f"Error cleaning up processes: {str(e)}")
             return 0
+    
+    async def get_resume_with_interview_plan(self, resume_id: int) -> Optional[Resume]:
+        """Получает резюме с планом интервью"""
+        try:
+            result = await self.db.execute(select(Resume).where(Resume.id == resume_id))
+            return result.scalar_one_or_none()
+        except Exception as e:
+            print(f"Error getting resume with interview plan: {str(e)}")
+            return None
+    
+    async def create_interview_session(self, resume_id: int) -> Optional[InterviewSession]:
+        """Создает новую сессию интервью"""
+        try:
+            # Генерируем уникальное имя комнаты
+            room_name = f"interview_{resume_id}_{int(time.time())}"
+            
+            new_session = InterviewSession(
+                resume_id=resume_id,
+                room_name=room_name,
+                status="created"
+            )
+            
+            self.db.add(new_session)
+            await self.db.commit()
+            await self.db.refresh(new_session)
+            
+            return new_session
+            
+        except Exception as e:
+            await self.db.rollback()
+            print(f"Error creating interview session: {str(e)}")
+            return None
+    
+    async def delete_interview_session(self, session_id: int) -> bool:
+        """Удаляет сессию интервью"""
+        try:
+            result = await self.db.execute(
+                select(InterviewSession).where(InterviewSession.id == session_id)
+            )
+            session = result.scalar_one_or_none()
+            
+            if not session:
+                return False
+            
+            await self.db.delete(session)
+            await self.db.commit()
+            return True
+            
+        except Exception as e:
+            await self.db.rollback()
+            print(f"Error deleting interview session: {str(e)}")
+            return False
