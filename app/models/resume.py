@@ -1,4 +1,5 @@
-from sqlmodel import SQLModel, Field, Relationship
+from sqlmodel import SQLModel, Field, Relationship, Column
+from sqlalchemy import JSON
 from typing import Optional
 from datetime import datetime
 from enum import Enum
@@ -6,6 +7,9 @@ from enum import Enum
 
 class ResumeStatus(str, Enum):
     PENDING = "pending"
+    PARSING = "parsing"  
+    PARSED = "parsed"
+    PARSE_FAILED = "parse_failed"
     UNDER_REVIEW = "under_review"
     INTERVIEW_SCHEDULED = "interview_scheduled"
     INTERVIEWED = "interviewed"
@@ -24,6 +28,9 @@ class ResumeBase(SQLModel):
     status: ResumeStatus = Field(default=ResumeStatus.PENDING)
     interview_report_url: Optional[str] = None
     notes: Optional[str] = None
+    parsed_data: Optional[dict] = Field(default=None, sa_column=Column(JSON))
+    interview_plan: Optional[dict] = Field(default=None, sa_column=Column(JSON))
+    parse_error: Optional[str] = None
 
 
 class Resume(ResumeBase, table=True):
@@ -49,6 +56,9 @@ class ResumeUpdate(SQLModel):
     status: Optional[ResumeStatus] = None
     interview_report_url: Optional[str] = None
     notes: Optional[str] = None
+    parsed_data: Optional[dict] = Field(default=None, sa_column=Column(JSON))
+    interview_plan: Optional[dict] = Field(default=None, sa_column=Column(JSON))
+    parse_error: Optional[str] = None
 
 
 class ResumeRead(ResumeBase):

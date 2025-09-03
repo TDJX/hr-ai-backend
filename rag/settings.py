@@ -1,34 +1,35 @@
+import os
 from pydantic_settings import BaseSettings
 from typing import Optional
 
 
-class Settings(BaseSettings):
+class RagSettings(BaseSettings):
     # Database
     database_url: str = "postgresql+asyncpg://tdjx:1309@localhost:5432/hr_ai"
     
-    # Redis Configuration (for Celery and caching)
+    # Milvus Settings
+    milvus_uri: str = "http://5.188.159.90:19530"
+    milvus_collection: str = "candidate_profiles"
+
+    # Redis
     redis_cache_url: str = "localhost"
     redis_cache_port: int = 6379
     redis_cache_db: int = 0
     
-    # Milvus Vector Database
-    milvus_uri: str = "http://localhost:19530"
-    milvus_collection: str = "candidate_profiles"
-    
-    # S3 Storage
-    s3_endpoint_url: str = "https://s3.selcdn.ru"
+    # S3 Configuration
+    s3_endpoint_url: str
     s3_access_key_id: str
     s3_secret_access_key: str
     s3_bucket_name: str
     s3_region: str = "ru-1"
     
-    # LLM API Keys
+    # LLM Settings
     openai_api_key: Optional[str] = None
     anthropic_api_key: Optional[str] = None
     openai_model: str = "gpt-4o-mini"
     openai_embeddings_model: str = "text-embedding-3-small"
     
-    # AI Agent API Keys (for voice interviewer)
+    # AI Agent Settings
     deepgram_api_key: Optional[str] = None
     cartesia_api_key: Optional[str] = None
     elevenlabs_api_key: Optional[str] = None
@@ -42,9 +43,10 @@ class Settings(BaseSettings):
     # App Configuration
     app_env: str = "development"
     debug: bool = True
-    
+
     class Config:
         env_file = ".env"
+        env_file_encoding = "utf-8"
 
 
-settings = Settings()
+settings = RagSettings()
