@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.session_middleware import get_current_session, get_db_session
+from app.core.session_middleware import get_current_session
 from app.models.session import Session
 from app.models.interview import InterviewValidationResponse, LiveKitTokenResponse, InterviewStatus
 from app.services.interview_service import InterviewRoomService
@@ -13,13 +12,11 @@ async def validate_interview(
     request: Request,
     resume_id: int,
     current_session: Session = Depends(get_current_session),
-    db_session: AsyncSession = Depends(get_db_session)
+    interview_service: InterviewRoomService = Depends(InterviewRoomService)
 ):
     """Валидация резюме для проведения собеседования"""
     if not current_session:
         raise HTTPException(status_code=401, detail="No active session")
-    
-    interview_service = InterviewRoomService(db_session)
     
     # Проверяем валидность резюме для собеседования
     validation_result = await interview_service.validate_resume_for_interview(resume_id)
@@ -40,13 +37,11 @@ async def get_interview_token(
     request: Request,
     resume_id: int,
     current_session: Session = Depends(get_current_session),
-    db_session: AsyncSession = Depends(get_db_session)
+    interview_service: InterviewRoomService = Depends(InterviewRoomService)
 ):
     """Получение токена для LiveKit собеседования"""
     if not current_session:
         raise HTTPException(status_code=401, detail="No active session")
-    
-    interview_service = InterviewRoomService(db_session)
     
     # Получаем токен для LiveKit
     token_response = await interview_service.get_livekit_token(resume_id)
@@ -65,13 +60,11 @@ async def end_interview(
     request: Request,
     resume_id: int,
     current_session: Session = Depends(get_current_session),
-    db_session: AsyncSession = Depends(get_db_session)
+    interview_service: InterviewRoomService = Depends(InterviewRoomService)
 ):
     """Завершение собеседования"""
     if not current_session:
         raise HTTPException(status_code=401, detail="No active session")
-    
-    interview_service = InterviewRoomService(db_session)
     
     # Получаем активную сессию собеседования
     interview_session = await interview_service.get_interview_session(resume_id)

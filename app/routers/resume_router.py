@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, Request
-from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
-from app.core.session_middleware import get_current_session, get_db_session
+from app.core.session_middleware import get_current_session
 from app.models.resume import ResumeCreate, ResumeUpdate, ResumeRead, ResumeStatus
 from app.models.session import Session
 from app.services.resume_service import ResumeService
@@ -22,13 +21,12 @@ async def create_resume(
     cover_letter: Optional[str] = Form(None),
     resume_file: UploadFile = File(...),
     current_session: Session = Depends(get_current_session),
-    db_session: AsyncSession = Depends(get_db_session)
+    resume_service: ResumeService = Depends(ResumeService)
 ):
     if not current_session:
         raise HTTPException(status_code=401, detail="No active session")
     
     file_service = FileService()
-    resume_service = ResumeService(db_session)
     
     upload_result = await file_service.upload_resume_file(resume_file)
     if not upload_result:
@@ -74,12 +72,10 @@ async def get_resumes(
     vacancy_id: Optional[int] = Query(None),
     status: Optional[ResumeStatus] = Query(None),
     current_session: Session = Depends(get_current_session),
-    db_session: AsyncSession = Depends(get_db_session)
+    service: ResumeService = Depends(ResumeService)
 ):
     if not current_session:
         raise HTTPException(status_code=401, detail="No active session")
-    
-    service = ResumeService(db_session)
     
     # Получаем только резюме текущего пользователя
     if vacancy_id:
@@ -93,12 +89,10 @@ async def get_resume(
     request: Request,
     resume_id: int,
     current_session: Session = Depends(get_current_session),
-    db_session: AsyncSession = Depends(get_db_session)
+    service: ResumeService = Depends(ResumeService)
 ):
     if not current_session:
         raise HTTPException(status_code=401, detail="No active session")
-    
-    service = ResumeService(db_session)
     resume = await service.get_resume(resume_id)
     
     if not resume:
@@ -117,12 +111,10 @@ async def update_resume(
     resume_id: int,
     resume: ResumeUpdate,
     current_session: Session = Depends(get_current_session),
-    db_session: AsyncSession = Depends(get_db_session)
+    service: ResumeService = Depends(ResumeService)
 ):
     if not current_session:
         raise HTTPException(status_code=401, detail="No active session")
-    
-    service = ResumeService(db_session)
     existing_resume = await service.get_resume(resume_id)
     
     if not existing_resume:
@@ -142,12 +134,10 @@ async def update_resume_status(
     resume_id: int,
     status: ResumeStatus,
     current_session: Session = Depends(get_current_session),
-    db_session: AsyncSession = Depends(get_db_session)
+    service: ResumeService = Depends(ResumeService)
 ):
     if not current_session:
         raise HTTPException(status_code=401, detail="No active session")
-    
-    service = ResumeService(db_session)
     existing_resume = await service.get_resume(resume_id)
     
     if not existing_resume:
@@ -167,13 +157,12 @@ async def upload_interview_report(
     resume_id: int,
     report_file: UploadFile = File(...),
     current_session: Session = Depends(get_current_session),
-    db_session: AsyncSession = Depends(get_db_session)
+    resume_service: ResumeService = Depends(ResumeService)
 ):
     if not current_session:
         raise HTTPException(status_code=401, detail="No active session")
     
     file_service = FileService()
-    resume_service = ResumeService(db_session)
     
     existing_resume = await resume_service.get_resume(resume_id)
     if not existing_resume:
@@ -198,14 +187,13 @@ async def get_parsing_status(
     resume_id: int,
     task_id: str = Query(..., description="Task ID from resume upload response"),
     current_session: Session = Depends(get_current_session),
-    db_session: AsyncSession = Depends(get_db_session)
+    service: ResumeService = Depends(ResumeService)
 ):
     """Получить статус парсинга резюме по task_id"""
     if not current_session:
         raise HTTPException(status_code=401, detail="No active session")
     
     # Проверяем доступ к резюме
-    service = ResumeService(db_session)
     resume = await service.get_resume(resume_id)
     
     if not resume:
@@ -263,12 +251,10 @@ async def delete_resume(
     request: Request,
     resume_id: int,
     current_session: Session = Depends(get_current_session),
-    db_session: AsyncSession = Depends(get_db_session)
+    service: ResumeService = Depends(ResumeService)
 ):
     if not current_session:
         raise HTTPException(status_code=401, detail="No active session")
-    
-    service = ResumeService(db_session)
     existing_resume = await service.get_resume(resume_id)
     
     if not existing_resume:

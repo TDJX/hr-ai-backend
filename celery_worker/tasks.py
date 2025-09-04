@@ -9,6 +9,9 @@ from celery_worker.database import get_sync_session, SyncResumeRepository
 from rag.llm.model import ResumeParser
 from rag.registry import registry
 
+# Импортируем новые задачи анализа интервью
+from celery_worker.interview_analysis_task import generate_interview_report, analyze_multiple_candidates
+
 
 def generate_interview_plan(resume_id: int, combined_data: Dict[str, Any]) -> Dict[str, Any]:
     """Генерирует план интервью на основе резюме и вакансии"""

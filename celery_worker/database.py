@@ -8,7 +8,8 @@ from rag.settings import settings
 sync_engine = create_engine(
     settings.database_url.replace("asyncpg", "psycopg2"),  # Убираем asyncpg для синхронного подключения
     echo=False,
-    future=True
+    future=True,
+    connect_args={"client_encoding": "utf8"}  # Принудительно UTF-8
 )
 
 # Создаем синхронный session maker
@@ -59,7 +60,6 @@ class SyncResumeRepository:
                 resume.status = ResumeStatus.PARSED
                 if parsed_data:
                     resume.parsed_data = parsed_data
-                    # НЕ перезаписываем контактные данные из формы - они уже правильные
             elif status == 'failed':
                 resume.status = ResumeStatus.PARSE_FAILED
                 if error_message:
@@ -85,3 +85,29 @@ class SyncResumeRepository:
             return resume
         
         return None
+    
+    def _normalize_utf8_dict(self, data):
+        """Нормализует UTF-8 в словаре рекурсивно"""
+        import json
+        
+        # Сериализуем в JSON с ensure_ascii=False, потом парсим обратно
+        # Это принудительно конвертирует все unicode escape sequences в нормальные символы
+        try:
+            json_str = json.dumps(data, ensure_ascii=False, separators=(',', ':'))
+            return json.loads(json_str)
+        except (TypeError, ValueError):
+            # Fallback - рекурсивная обработка
+            if isinstance(data, dict):
+                return {key: self._normalize_utf8_dict(value) for key, value in data.items()}
+            elif isinstance(data, list):
+                return [self._normalize_utf8_dict(item) for item in data]
+            elif isinstance(data, str):
+                try:
+                    # Пытаемся декодировать unicode escape sequences
+                    if '\\u' in data:
+                        return data.encode().decode('unicode_escape')
+                    return data
+                except (UnicodeDecodeError, UnicodeEncodeError):
+                    return data
+            else:
+                return data

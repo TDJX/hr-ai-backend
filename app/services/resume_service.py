@@ -1,12 +1,12 @@
-from typing import List, Optional
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import List, Optional, Annotated
+from fastapi import Depends
 from app.models.resume import Resume, ResumeCreate, ResumeUpdate, ResumeStatus
 from app.repositories.resume_repository import ResumeRepository
 
 
 class ResumeService:
-    def __init__(self, session: AsyncSession):
-        self.repository = ResumeRepository(session)
+    def __init__(self, repository: Annotated[ResumeRepository, Depends(ResumeRepository)]):
+        self.repository = repository
 
     async def create_resume(self, resume_data: ResumeCreate) -> Resume:
         resume = Resume.model_validate(resume_data)

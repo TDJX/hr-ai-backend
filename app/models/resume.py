@@ -56,8 +56,8 @@ class ResumeUpdate(SQLModel):
     status: Optional[ResumeStatus] = None
     interview_report_url: Optional[str] = None
     notes: Optional[str] = None
-    parsed_data: Optional[dict] = Field(default=None, sa_column=Column(JSON))
-    interview_plan: Optional[dict] = Field(default=None, sa_column=Column(JSON))
+    parsed_data: Optional[dict] = None
+    interview_plan: Optional[dict] = None
     parse_error: Optional[str] = None
 
 

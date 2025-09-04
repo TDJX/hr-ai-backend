@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, Request, HTTPException
 from fastapi.responses import JSONResponse
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.session_middleware import get_current_session, get_db_session
+from app.core.session_middleware import get_current_session
 from app.repositories.session_repository import SessionRepository
 from app.models.session import Session, SessionRead
 from typing import Optional
@@ -38,18 +37,15 @@ async def get_current_session_info(
 async def refresh_session(
     request: Request,
     current_session: Session = Depends(get_current_session),
-    db_session: AsyncSession = Depends(get_db_session)
+    session_repo: SessionRepository = Depends(SessionRepository)
 ):
     """Продлить сессию на 30 дней"""
     if not current_session:
         raise HTTPException(status_code=401, detail="No active session")
-    
-    session_repo = SessionRepository(db_session)
     current_session.extend_session(days=30)
     
-    db_session.add(current_session)
-    db_session.commit()
-    db_session.refresh(current_session)
+    # Обновляем через репозиторий
+    await session_repo.update_last_activity(current_session.session_id)
     
     logger.info(f"Extended session {current_session.session_id}")
     
@@ -64,13 +60,11 @@ async def refresh_session(
 async def logout(
     request: Request,
     current_session: Session = Depends(get_current_session),
-    db_session: AsyncSession = Depends(get_db_session)
+    session_repo: SessionRepository = Depends(SessionRepository)
 ):
     """Завершить текущую сессию"""
     if not current_session:
         raise HTTPException(status_code=401, detail="No active session")
-    
-    session_repo = SessionRepository(db_session)
     deactivated = await session_repo.deactivate_session(current_session.session_id)
     
     if deactivated:

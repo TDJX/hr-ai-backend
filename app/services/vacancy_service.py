@@ -1,12 +1,12 @@
-from typing import List, Optional
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import List, Optional, Annotated
+from fastapi import Depends
 from app.models.vacancy import Vacancy, VacancyCreate, VacancyUpdate
 from app.repositories.vacancy_repository import VacancyRepository
 
 
 class VacancyService:
-    def __init__(self, session: AsyncSession):
-        self.repository = VacancyRepository(session)
+    def __init__(self, repository: Annotated[VacancyRepository, Depends(VacancyRepository)]):
+        self.repository = repository
 
     async def create_vacancy(self, vacancy_data: VacancyCreate) -> Vacancy:
         vacancy = Vacancy.model_validate(vacancy_data)

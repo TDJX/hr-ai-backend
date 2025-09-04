@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.database import async_session_maker
+from app.core.database import get_session
 from app.repositories.session_repository import SessionRepository
 from app.models.session import Session
 import logging
@@ -32,7 +32,7 @@ class SessionMiddleware(BaseHTTPMiddleware):
         
         try:
             # Работаем с БД в рамках одной async сессии
-            async with async_session_maker() as db_session:
+            async for db_session in get_session():
                 session_repo = SessionRepository(db_session)
                 
                 # Проверяем существующую сессию
@@ -56,6 +56,7 @@ class SessionMiddleware(BaseHTTPMiddleware):
 
                 # Добавляем сессию в контекст запроса
                 request.state.session = session_obj
+                break
 
         except Exception as e:
             logger.error(f"Session middleware error: {e}")
@@ -84,9 +85,3 @@ class SessionMiddleware(BaseHTTPMiddleware):
 async def get_current_session(request: Request) -> Session:
     """Получить текущую сессию из контекста запроса"""
     return getattr(request.state, 'session', None)
-
-
-async def get_db_session() -> AsyncSession:
-    """Получить новую сессию БД для использования в эндпоинтах"""
-    async with async_session_maker() as session:
-        yield session

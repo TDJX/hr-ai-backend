@@ -104,16 +104,7 @@ class AIInterviewerService:
                 pass
         except Exception as e:
             logger.error(f"Error processing user audio: {str(e)}")
-    
-    async def speech_to_text(self, audio_data: bytes) -> Optional[str]:
-        """Конвертация речи в текст через Whisper API"""
-        # TODO: Интеграция с OpenAI Whisper или другим STT сервисом
-        pass
-    
-    async def text_to_speech(self, text: str) -> bytes:
-        """Конвертация текста в речь через TTS сервис"""
-        # TODO: Интеграция с ElevenLabs, OpenAI TTS или другим сервисом
-        pass
+
     
     async def generate_interview_questions(self):
         """Генерация вопросов для интервью на основе резюме"""

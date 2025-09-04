@@ -3,27 +3,30 @@ import time
 import uuid
 import json
 import subprocess
-from typing import Optional
-from datetime import datetime, timedelta
+from typing import Optional, Annotated
+from datetime import datetime
 from livekit.api import AccessToken, VideoGrants
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from fastapi import Depends
+from app.repositories.interview_repository import InterviewRepository
+from app.repositories.resume_repository import ResumeRepository
 from app.models.interview import (
     InterviewSession, 
-    InterviewSessionCreate, 
-    InterviewSessionUpdate,
-    InterviewStatus,
+    InterviewSessionCreate,
     InterviewValidationResponse,
     LiveKitTokenResponse
 )
 from app.models.resume import Resume, ResumeStatus
-from app.models.vacancy import Vacancy
 from rag.settings import settings
 
 
 class InterviewRoomService:
-    def __init__(self, db_session: AsyncSession):
-        self.db = db_session
+    def __init__(
+        self,
+        interview_repo: Annotated[InterviewRepository, Depends(InterviewRepository)],
+        resume_repo: Annotated[ResumeRepository, Depends(ResumeRepository)]
+    ):
+        self.interview_repo = interview_repo
+        self.resume_repo = resume_repo
         self.livekit_url = settings.livekit_url or "ws://localhost:7880"
         self.api_key = settings.livekit_api_key or "devkey"
         self.api_secret = settings.livekit_api_secret or "secret"
@@ -32,8 +35,7 @@ class InterviewRoomService:
         """Проверяет, можно ли проводить собеседование для данного резюме"""
         try:
             # Получаем резюме
-            result = await self.db.execute(select(Resume).where(Resume.id == resume_id))
-            resume = result.scalar_one_or_none()
+            resume = await self.resume_repo.get(resume_id)
             
             if not resume:
                 return InterviewValidationResponse(
@@ -49,12 +51,7 @@ class InterviewRoomService:
                 )
             
             # Проверяем активную сессию только для информации (не блокируем)
-            result = await self.db.execute(
-                select(InterviewSession)
-                .where(InterviewSession.resume_id == resume_id)
-                .where(InterviewSession.status == "active")
-            )
-            active_session = result.scalar_one_or_none()
+            active_session = await self.interview_repo.get_active_session_by_resume_id(resume_id)
             
             message = "Resume is ready for interview"
             if active_session:
@@ -79,21 +76,12 @@ class InterviewRoomService:
             timestamp = int(time.time())
             room_name = f"interview_{resume_id}_{timestamp}_{unique_id}"
             
-            # Создаем сессию в БД
-            session_data = InterviewSessionCreate(
-                resume_id=resume_id,
-                room_name=room_name
-            )
-            
-            interview_session = InterviewSession(**session_data.model_dump())
-            self.db.add(interview_session)
-            await self.db.commit()
-            await self.db.refresh(interview_session)
+            # Создаем сессию в БД через репозиторий
+            interview_session = await self.interview_repo.create_interview_session(resume_id, room_name)
             
             return interview_session
             
         except Exception as e:
-            await self.db.rollback()
             print(f"Error creating interview session: {str(e)}")
             return None
     
@@ -125,7 +113,7 @@ class InterviewRoomService:
                 return None
             
             # Проверяем, есть ли уже созданная сессия для этого резюме
-            existing_session = await self.get_interview_session(resume_id)
+            existing_session = await self.interview_repo.get_active_session_by_resume_id(resume_id)
             if existing_session:
                 # Используем существующую сессию
                 interview_session = existing_session
@@ -148,7 +136,7 @@ class InterviewRoomService:
             interview_plan = await self.get_resume_data_for_interview(resume_id)
             
             # Обновляем статус сессии на ACTIVE
-            await self.update_session_status(interview_session.id, "active")
+            await self.interview_repo.update_session_status(interview_session.id, "active")
             
             # Запускаем AI агента для этой сессии
             await self.start_ai_interviewer(interview_session, interview_plan)
@@ -165,41 +153,11 @@ class InterviewRoomService:
     
     async def update_session_status(self, session_id: int, status: str) -> bool:
         """Обновляет статус сессии собеседования"""
-        try:
-            result = await self.db.execute(
-                select(InterviewSession).where(InterviewSession.id == session_id)
-            )
-            session = result.scalar_one_or_none()
-            
-            if not session:
-                return False
-            
-            session.status = status
-            if status == "completed":
-                session.completed_at = datetime.utcnow()
-            
-            await self.db.commit()
-            return True
-            
-        except Exception as e:
-            await self.db.rollback()
-            print(f"Error updating session status: {str(e)}")
-            return False
+        return await self.interview_repo.update_session_status(session_id, status)
     
     async def get_interview_session(self, resume_id: int) -> Optional[InterviewSession]:
         """Получает активную сессию собеседования для резюме"""
-        try:
-            result = await self.db.execute(
-                select(InterviewSession)
-                .where(InterviewSession.resume_id == resume_id)
-                .where(InterviewSession.status.in_(["created", "active"]))
-                .order_by(InterviewSession.started_at.desc())
-            )
-            return result.scalar_one_or_none()
-            
-        except Exception as e:
-            print(f"Error getting interview session: {str(e)}")
-            return None
+        return await self.interview_repo.get_active_session_by_resume_id(resume_id)
     
     async def start_ai_interviewer(self, interview_session: InterviewSession, interview_plan: dict):
         """Запускает AI интервьюера для сессии"""
@@ -210,11 +168,14 @@ class InterviewRoomService:
                 f"ai_interviewer_{interview_session.id}"
             )
             
-            # Подготавливаем метаданные с планом интервью
-            room_metadata = json.dumps({
-                "interview_plan": interview_plan,
-                "session_id": interview_session.id
-            })
+            # Сохраняем метаданные во временный файл для избежания проблем с кодировкой
+            import tempfile
+            metadata_file = f"interview_metadata_{interview_session.id}.json"
+            with open(metadata_file, 'w', encoding='utf-8') as f:
+                json.dump({
+                    "interview_plan": interview_plan,
+                    "session_id": interview_session.id
+                }, f, ensure_ascii=False, indent=2)
             
             # Запускаем AI агента в отдельном процессе
             agent_cmd = [
@@ -231,10 +192,11 @@ class InterviewRoomService:
             # Устанавливаем переменные окружения
             env = os.environ.copy()
             env.update({
-                "LIVEKIT_ROOM_METADATA": room_metadata,
+                "INTERVIEW_METADATA_FILE": metadata_file,
                 "OPENAI_API_KEY": settings.openai_api_key or "",
                 "DEEPGRAM_API_KEY": settings.deepgram_api_key or "",
                 "CARTESIA_API_KEY": settings.cartesia_api_key or "",
+                "PYTHONIOENCODING": "utf-8",
             })
             
             # Запускаем процесс в фоне
@@ -251,7 +213,7 @@ class InterviewRoomService:
             print(f"[DEBUG] Started AI interviewer process {process.pid} for session {interview_session.id}")
             
             # Сохраняем PID процесса в БД для управления
-            await self.update_agent_process_info(
+            await self.interview_repo.update_ai_agent_status(
                 interview_session.id, 
                 process.pid, 
                 "running"
@@ -260,7 +222,7 @@ class InterviewRoomService:
         except Exception as e:
             print(f"Error starting AI interviewer: {str(e)}")
             # Обновляем статус на failed
-            await self.update_agent_process_info(
+            await self.interview_repo.update_ai_agent_status(
                 interview_session.id, 
                 None, 
                 "failed"
@@ -270,10 +232,7 @@ class InterviewRoomService:
         """Получает готовый план интервью из базы данных"""
         try:
             # Получаем резюме с готовым планом интервью
-            result = await self.db.execute(
-                select(Resume).where(Resume.id == resume_id)
-            )
-            resume = result.scalar_one_or_none()
+            resume = await self.resume_repo.get(resume_id)
             
             if not resume:
                 return self._get_fallback_interview_plan()
@@ -361,46 +320,16 @@ class InterviewRoomService:
     
     async def update_agent_process_info(self, session_id: int, pid: int = None, status: str = "not_started") -> bool:
         """Обновляет информацию о процессе AI агента"""
-        try:
-            result = await self.db.execute(
-                select(InterviewSession).where(InterviewSession.id == session_id)
-            )
-            session = result.scalar_one_or_none()
-            
-            if not session:
-                return False
-            
-            session.ai_agent_pid = pid
-            session.ai_agent_status = status
-            
-            await self.db.commit()
-            return True
-            
-        except Exception as e:
-            await self.db.rollback()
-            print(f"Error updating agent process info: {str(e)}")
-            return False
+        return await self.interview_repo.update_ai_agent_status(session_id, pid, status)
     
     async def get_active_agent_processes(self) -> list:
         """Получает список активных AI процессов"""
-        try:
-            result = await self.db.execute(
-                select(InterviewSession)
-                .where(InterviewSession.ai_agent_status == "running")
-            )
-            return result.scalars().all()
-            
-        except Exception as e:
-            print(f"Error getting active processes: {str(e)}")
-            return []
+        return await self.interview_repo.get_sessions_with_running_agents()
     
     async def stop_agent_process(self, session_id: int) -> bool:
         """Останавливает AI процесс для сессии"""
         try:
-            result = await self.db.execute(
-                select(InterviewSession).where(InterviewSession.id == session_id)
-            )
-            session = result.scalar_one_or_none()
+            session = await self.interview_repo.get(session_id)
             
             if not session or not session.ai_agent_pid:
                 return False
@@ -423,14 +352,14 @@ class InterviewRoomService:
                     process.kill()
                 
                 # Обновляем статус в БД
-                await self.update_agent_process_info(session_id, None, "stopped")
+                await self.interview_repo.update_ai_agent_status(session_id, None, "stopped")
                 
                 print(f"Stopped AI agent process {session.ai_agent_pid} for session {session_id}")
                 return True
                 
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 # Процесс уже не существует
-                await self.update_agent_process_info(session_id, None, "stopped")
+                await self.interview_repo.update_ai_agent_status(session_id, None, "stopped")
                 return True
                 
         except Exception as e:
@@ -450,10 +379,10 @@ class InterviewRoomService:
                     try:
                         process = psutil.Process(session.ai_agent_pid)
                         if not process.is_running():
-                            await self.update_agent_process_info(session.id, None, "stopped")
+                            await self.interview_repo.update_ai_agent_status(session.id, None, "stopped")
                             cleaned_count += 1
                     except psutil.NoSuchProcess:
-                        await self.update_agent_process_info(session.id, None, "stopped")
+                        await self.interview_repo.update_ai_agent_status(session.id, None, "stopped")
                         cleaned_count += 1
             
             print(f"Cleaned up {cleaned_count} dead processes")
