@@ -1,37 +1,37 @@
-from .vacancy import Vacancy, VacancyCreate, VacancyUpdate, VacancyRead
-from .resume import Resume, ResumeCreate, ResumeUpdate, ResumeRead
-from .session import Session, SessionCreate, SessionRead
 from .interview import (
-    InterviewSession, 
-    InterviewSessionCreate, 
-    InterviewSessionUpdate, 
+    InterviewSession,
+    InterviewSessionCreate,
     InterviewSessionRead,
-    InterviewStatus
+    InterviewSessionUpdate,
+    InterviewStatus,
 )
 from .interview_report import (
     InterviewReport,
     InterviewReportCreate,
-    InterviewReportUpdate,
     InterviewReportRead,
     InterviewReportSummary,
-    RecommendationType
+    InterviewReportUpdate,
+    RecommendationType,
 )
+from .resume import Resume, ResumeCreate, ResumeRead, ResumeUpdate
+from .session import Session, SessionCreate, SessionRead
+from .vacancy import Vacancy, VacancyCreate, VacancyRead, VacancyUpdate
 
 __all__ = [
     "Vacancy",
-    "VacancyCreate", 
+    "VacancyCreate",
     "VacancyUpdate",
     "VacancyRead",
     "Resume",
     "ResumeCreate",
-    "ResumeUpdate", 
+    "ResumeUpdate",
     "ResumeRead",
     "Session",
     "SessionCreate",
     "SessionRead",
     "InterviewSession",
     "InterviewSessionCreate",
-    "InterviewSessionUpdate", 
+    "InterviewSessionUpdate",
     "InterviewSessionRead",
     "InterviewStatus",
     "InterviewReport",

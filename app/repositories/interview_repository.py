@@ -1,24 +1,30 @@
-from typing import Optional, List, Annotated
 from datetime import datetime
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, desc
+from typing import Annotated
+
 from fastapi import Depends
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_session
-from app.models.interview import InterviewSession, InterviewStatus
+from app.models.interview import InterviewSession
 from app.repositories.base_repository import BaseRepository
 
 
 class InterviewRepository(BaseRepository[InterviewSession]):
     def __init__(self, session: Annotated[AsyncSession, Depends(get_session)]):
         super().__init__(InterviewSession, session)
-    
-    async def get_by_room_name(self, room_name: str) -> Optional[InterviewSession]:
+
+    async def get_by_room_name(self, room_name: str) -> InterviewSession | None:
         """Получить сессию интервью по имени комнаты"""
-        statement = select(InterviewSession).where(InterviewSession.room_name == room_name)
+        statement = select(InterviewSession).where(
+            InterviewSession.room_name == room_name
+        )
         result = await self._session.execute(statement)
         return result.scalar_one_or_none()
-    
-    async def update_status(self, session_id: int, status: str, completed_at: Optional[datetime] = None) -> bool:
+
+    async def update_status(
+        self, session_id: int, status: str, completed_at: datetime | None = None
+    ) -> bool:
         """Обновить статус сессии"""
         try:
             # Получаем объект и обновляем его напрямую
@@ -26,21 +32,23 @@ class InterviewRepository(BaseRepository[InterviewSession]):
                 select(InterviewSession).where(InterviewSession.id == session_id)
             )
             session_obj = result.scalar_one_or_none()
-            
+
             if not session_obj:
                 return False
-            
+
             session_obj.status = status
             if completed_at:
                 session_obj.completed_at = completed_at
-            
+
             await self._session.commit()
             return True
         except Exception:
             await self._session.rollback()
             return False
-    
-    async def update_dialogue_history(self, room_name: str, dialogue_history: list) -> bool:
+
+    async def update_dialogue_history(
+        self, room_name: str, dialogue_history: list
+    ) -> bool:
         """Обновить историю диалога для сессии"""
         try:
             # Получаем объект и обновляем его напрямую
@@ -48,18 +56,20 @@ class InterviewRepository(BaseRepository[InterviewSession]):
                 select(InterviewSession).where(InterviewSession.room_name == room_name)
             )
             session_obj = result.scalar_one_or_none()
-            
+
             if not session_obj:
                 return False
-            
+
             session_obj.dialogue_history = dialogue_history
             await self._session.commit()
             return True
         except Exception:
             await self._session.rollback()
             return False
-    
-    async def update_ai_agent_status(self, session_id: int, pid: Optional[int] = None, status: str = "not_started") -> bool:
+
+    async def update_ai_agent_status(
+        self, session_id: int, pid: int | None = None, status: str = "not_started"
+    ) -> bool:
         """Обновить статус AI агента"""
         try:
             # Получаем объект и обновляем его напрямую
@@ -67,10 +77,10 @@ class InterviewRepository(BaseRepository[InterviewSession]):
                 select(InterviewSession).where(InterviewSession.id == session_id)
             )
             session_obj = result.scalar_one_or_none()
-            
+
             if not session_obj:
                 return False
-            
+
             session_obj.ai_agent_pid = pid
             session_obj.ai_agent_status = status
             await self._session.commit()
@@ -78,8 +88,8 @@ class InterviewRepository(BaseRepository[InterviewSession]):
         except Exception:
             await self._session.rollback()
             return False
-    
-    async def get_sessions_with_running_agents(self) -> List[InterviewSession]:
+
+    async def get_sessions_with_running_agents(self) -> list[InterviewSession]:
         """Получить сессии с запущенными AI агентами"""
         statement = select(InterviewSession).where(
             InterviewSession.ai_agent_status == "running"
@@ -87,7 +97,9 @@ class InterviewRepository(BaseRepository[InterviewSession]):
         result = await self._session.execute(statement)
         return result.scalars().all()
 
-    async def get_active_session_by_resume_id(self, resume_id: int) -> Optional[InterviewSession]:
+    async def get_active_session_by_resume_id(
+        self, resume_id: int
+    ) -> InterviewSession | None:
         """Получить активную сессию собеседования для резюме"""
         statement = (
             select(InterviewSession)
@@ -98,13 +110,13 @@ class InterviewRepository(BaseRepository[InterviewSession]):
         result = await self._session.execute(statement)
         return result.scalar_one_or_none()
 
-    async def create_interview_session(self, resume_id: int, room_name: str) -> InterviewSession:
+    async def create_interview_session(
+        self, resume_id: int, room_name: str
+    ) -> InterviewSession:
         """Создать новую сессию интервью"""
         from app.models.interview import InterviewSessionCreate
-        session_data = InterviewSessionCreate(
-            resume_id=resume_id,
-            room_name=room_name
-        )
+
+        session_data = InterviewSessionCreate(resume_id=resume_id, room_name=room_name)
         return await self.create(session_data.model_dump())
 
     async def update_session_status(self, session_id: int, status: str) -> bool:

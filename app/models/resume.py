@@ -1,13 +1,13 @@
-from sqlmodel import SQLModel, Field, Relationship, Column
-from sqlalchemy import JSON
-from typing import Optional
 from datetime import datetime
 from enum import Enum
+
+from sqlalchemy import JSON
+from sqlmodel import Column, Field, SQLModel
 
 
 class ResumeStatus(str, Enum):
     PENDING = "pending"
-    PARSING = "parsing"  
+    PARSING = "parsing"
     PARSED = "parsed"
     PARSE_FAILED = "parse_failed"
     UNDER_REVIEW = "under_review"
@@ -22,19 +22,19 @@ class ResumeBase(SQLModel):
     session_id: int = Field(foreign_key="session.id")
     applicant_name: str = Field(max_length=255)
     applicant_email: str = Field(max_length=255)
-    applicant_phone: Optional[str] = Field(max_length=50)
+    applicant_phone: str | None = Field(max_length=50)
     resume_file_url: str
-    cover_letter: Optional[str] = None
+    cover_letter: str | None = None
     status: ResumeStatus = Field(default=ResumeStatus.PENDING)
-    interview_report_url: Optional[str] = None
-    notes: Optional[str] = None
-    parsed_data: Optional[dict] = Field(default=None, sa_column=Column(JSON))
-    interview_plan: Optional[dict] = Field(default=None, sa_column=Column(JSON))
-    parse_error: Optional[str] = None
+    interview_report_url: str | None = None
+    notes: str | None = None
+    parsed_data: dict | None = Field(default=None, sa_column=Column(JSON))
+    interview_plan: dict | None = Field(default=None, sa_column=Column(JSON))
+    parse_error: str | None = None
 
 
 class Resume(ResumeBase, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -43,22 +43,22 @@ class ResumeCreate(SQLModel):
     vacancy_id: int
     applicant_name: str = Field(max_length=255)
     applicant_email: str = Field(max_length=255)
-    applicant_phone: Optional[str] = Field(max_length=50)
+    applicant_phone: str | None = Field(max_length=50)
     resume_file_url: str
-    cover_letter: Optional[str] = None
+    cover_letter: str | None = None
 
 
 class ResumeUpdate(SQLModel):
-    applicant_name: Optional[str] = None
-    applicant_email: Optional[str] = None
-    applicant_phone: Optional[str] = None
-    cover_letter: Optional[str] = None
-    status: Optional[ResumeStatus] = None
-    interview_report_url: Optional[str] = None
-    notes: Optional[str] = None
-    parsed_data: Optional[dict] = None
-    interview_plan: Optional[dict] = None
-    parse_error: Optional[str] = None
+    applicant_name: str | None = None
+    applicant_email: str | None = None
+    applicant_phone: str | None = None
+    cover_letter: str | None = None
+    status: ResumeStatus | None = None
+    interview_report_url: str | None = None
+    notes: str | None = None
+    parsed_data: dict | None = None
+    interview_plan: dict | None = None
+    parse_error: str | None = None
 
 
 class ResumeRead(ResumeBase):

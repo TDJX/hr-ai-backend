@@ -5,17 +5,17 @@ Revises: c9bcdd2ddeeb
 Create Date: 2025-09-03 23:45:13.221735
 
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = 'a816820baadb'
-down_revision: Union[str, Sequence[str], None] = 'c9bcdd2ddeeb'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = "a816820baadb"
+down_revision: str | Sequence[str] | None = "c9bcdd2ddeeb"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -26,17 +26,20 @@ def upgrade() -> None:
         ALTER COLUMN parsed_data TYPE TEXT USING parsed_data::TEXT,
         ALTER COLUMN interview_plan TYPE TEXT USING interview_plan::TEXT
     """)
-    
+
     op.execute("""
         ALTER TABLE interview_sessions 
         ALTER COLUMN dialogue_history TYPE TEXT USING dialogue_history::TEXT
     """)
-    
+
     # Also fix status column
-    op.alter_column('interview_sessions', 'status',
-               existing_type=sa.VARCHAR(length=50),
-               nullable=False,
-               existing_server_default=sa.text("'created'::character varying"))
+    op.alter_column(
+        "interview_sessions",
+        "status",
+        existing_type=sa.VARCHAR(length=50),
+        nullable=False,
+        existing_server_default=sa.text("'created'::character varying"),
+    )
 
 
 def downgrade() -> None:
@@ -47,13 +50,16 @@ def downgrade() -> None:
         ALTER COLUMN parsed_data TYPE JSON USING parsed_data::JSON,
         ALTER COLUMN interview_plan TYPE JSON USING interview_plan::JSON
     """)
-    
+
     op.execute("""
         ALTER TABLE interview_sessions 
         ALTER COLUMN dialogue_history TYPE JSON USING dialogue_history::JSON
     """)
-    
-    op.alter_column('interview_sessions', 'status',
-               existing_type=sa.VARCHAR(length=50),
-               nullable=True,
-               existing_server_default=sa.text("'created'::character varying"))
+
+    op.alter_column(
+        "interview_sessions",
+        "status",
+        existing_type=sa.VARCHAR(length=50),
+        nullable=True,
+        existing_server_default=sa.text("'created'::character varying"),
+    )

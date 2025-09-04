@@ -1,29 +1,27 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import List, Optional
 
+from app.models.vacancy import VacancyCreate, VacancyRead, VacancyUpdate
 from app.services.vacancy_service import VacancyService
-from app.models.vacancy import VacancyCreate, VacancyUpdate, VacancyRead
 
 router = APIRouter(prefix="/vacancies", tags=["vacancies"])
 
 
 @router.post("/", response_model=VacancyRead)
 async def create_vacancy(
-    vacancy: VacancyCreate,
-    vacancy_service: VacancyService = Depends(VacancyService)
+    vacancy: VacancyCreate, vacancy_service: VacancyService = Depends(VacancyService)
 ):
     return await vacancy_service.create_vacancy(vacancy)
 
 
-@router.get("/", response_model=List[VacancyRead])
+@router.get("/", response_model=list[VacancyRead])
 async def get_vacancies(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     active_only: bool = Query(False),
-    title: Optional[str] = Query(None),
-    company_name: Optional[str] = Query(None),
-    area_name: Optional[str] = Query(None),
-    vacancy_service: VacancyService = Depends(VacancyService)
+    title: str | None = Query(None),
+    company_name: str | None = Query(None),
+    area_name: str | None = Query(None),
+    vacancy_service: VacancyService = Depends(VacancyService),
 ):
     if any([title, company_name, area_name]):
         return await vacancy_service.search_vacancies(
@@ -31,19 +29,18 @@ async def get_vacancies(
             company_name=company_name,
             area_name=area_name,
             skip=skip,
-            limit=limit
+            limit=limit,
         )
-    
+
     if active_only:
         return await vacancy_service.get_active_vacancies(skip=skip, limit=limit)
-    
+
     return await vacancy_service.get_all_vacancies(skip=skip, limit=limit)
 
 
 @router.get("/{vacancy_id}", response_model=VacancyRead)
 async def get_vacancy(
-    vacancy_id: int,
-    vacancy_service: VacancyService = Depends(VacancyService)
+    vacancy_id: int, vacancy_service: VacancyService = Depends(VacancyService)
 ):
     vacancy = await vacancy_service.get_vacancy(vacancy_id)
     if not vacancy:
@@ -55,7 +52,7 @@ async def get_vacancy(
 async def update_vacancy(
     vacancy_id: int,
     vacancy: VacancyUpdate,
-    vacancy_service: VacancyService = Depends(VacancyService)
+    vacancy_service: VacancyService = Depends(VacancyService),
 ):
     updated_vacancy = await vacancy_service.update_vacancy(vacancy_id, vacancy)
     if not updated_vacancy:
@@ -65,8 +62,7 @@ async def update_vacancy(
 
 @router.delete("/{vacancy_id}")
 async def delete_vacancy(
-    vacancy_id: int,
-    vacancy_service: VacancyService = Depends(VacancyService)
+    vacancy_id: int, vacancy_service: VacancyService = Depends(VacancyService)
 ):
     success = await vacancy_service.delete_vacancy(vacancy_id)
     if not success:
@@ -76,8 +72,7 @@ async def delete_vacancy(
 
 @router.patch("/{vacancy_id}/archive", response_model=VacancyRead)
 async def archive_vacancy(
-    vacancy_id: int,
-    vacancy_service: VacancyService = Depends(VacancyService)
+    vacancy_id: int, vacancy_service: VacancyService = Depends(VacancyService)
 ):
     archived_vacancy = await vacancy_service.archive_vacancy(vacancy_id)
     if not archived_vacancy:

@@ -5,25 +5,26 @@ Revises: 772538626a9e
 Create Date: 2025-09-04 12:16:56.495018
 
 """
-from typing import Sequence, Union
+
+from collections.abc import Sequence
 
 from alembic import op
-import sqlalchemy as sa
-
 
 # revision identifiers, used by Alembic.
-revision: str = '9c60c15f7846'
-down_revision: Union[str, Sequence[str], None] = '772538626a9e'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = "9c60c15f7846"
+down_revision: str | Sequence[str] | None = "772538626a9e"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
     """Create interview reports table with scoring fields."""
-    
+
     # Create enum type for recommendation
-    op.execute("CREATE TYPE recommendationtype AS ENUM ('STRONGLY_RECOMMEND', 'RECOMMEND', 'CONSIDER', 'REJECT')")
-    
+    op.execute(
+        "CREATE TYPE recommendationtype AS ENUM ('STRONGLY_RECOMMEND', 'RECOMMEND', 'CONSIDER', 'REJECT')"
+    )
+
     # Create interview_reports table
     op.execute("""
     CREATE TABLE interview_reports (
@@ -84,13 +85,23 @@ def upgrade() -> None:
         FOREIGN KEY (interview_session_id) REFERENCES interview_sessions(id)
     )
     """)
-    
+
     # Create useful indexes
-    op.execute("CREATE INDEX idx_interview_reports_overall_score ON interview_reports (overall_score DESC)")
-    op.execute("CREATE INDEX idx_interview_reports_recommendation ON interview_reports (recommendation)")
-    op.execute("CREATE INDEX idx_interview_reports_technical_skills ON interview_reports (technical_skills_score DESC)")
-    op.execute("CREATE INDEX idx_interview_reports_communication ON interview_reports (communication_score DESC)")
-    op.execute("CREATE INDEX idx_interview_reports_session_id ON interview_reports (interview_session_id)")
+    op.execute(
+        "CREATE INDEX idx_interview_reports_overall_score ON interview_reports (overall_score DESC)"
+    )
+    op.execute(
+        "CREATE INDEX idx_interview_reports_recommendation ON interview_reports (recommendation)"
+    )
+    op.execute(
+        "CREATE INDEX idx_interview_reports_technical_skills ON interview_reports (technical_skills_score DESC)"
+    )
+    op.execute(
+        "CREATE INDEX idx_interview_reports_communication ON interview_reports (communication_score DESC)"
+    )
+    op.execute(
+        "CREATE INDEX idx_interview_reports_session_id ON interview_reports (interview_session_id)"
+    )
 
 
 def downgrade() -> None:
