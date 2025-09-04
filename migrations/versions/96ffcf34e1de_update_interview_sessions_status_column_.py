@@ -5,23 +5,24 @@ Revises: 385d03e3281c
 Create Date: 2025-09-02 20:01:52.904608
 
 """
-from typing import Sequence, Union
+
+from collections.abc import Sequence
 
 from alembic import op
-import sqlalchemy as sa
-
 
 # revision identifiers, used by Alembic.
-revision: str = '96ffcf34e1de'
-down_revision: Union[str, Sequence[str], None] = '385d03e3281c'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = "96ffcf34e1de"
+down_revision: str | Sequence[str] | None = "385d03e3281c"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
     """Upgrade schema."""
     # Update status column to use interviewstatus enum
-    op.execute("ALTER TABLE interview_sessions ALTER COLUMN status TYPE interviewstatus USING status::interviewstatus")
+    op.execute(
+        "ALTER TABLE interview_sessions ALTER COLUMN status TYPE interviewstatus USING status::interviewstatus"
+    )
 
 
 def downgrade() -> None:

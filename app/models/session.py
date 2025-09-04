@@ -1,30 +1,32 @@
-from sqlmodel import SQLModel, Field
-from typing import Optional
-from datetime import datetime, timedelta
 import uuid
+from datetime import datetime, timedelta
+
+from sqlmodel import Field, SQLModel
 
 
 class SessionBase(SQLModel):
     session_id: str = Field(max_length=255, unique=True, index=True)
-    user_agent: Optional[str] = Field(max_length=512)
-    ip_address: Optional[str] = Field(max_length=45)
+    user_agent: str | None = Field(max_length=512)
+    ip_address: str | None = Field(max_length=45)
     is_active: bool = Field(default=True)
-    expires_at: datetime = Field(default_factory=lambda: datetime.utcnow() + timedelta(days=30))
+    expires_at: datetime = Field(
+        default_factory=lambda: datetime.utcnow() + timedelta(days=30)
+    )
     last_activity: datetime = Field(default_factory=datetime.utcnow)
 
 
 class Session(SessionBase, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     @classmethod
-    def create_new_session(cls, user_agent: Optional[str] = None, ip_address: Optional[str] = None) -> "Session":
+    def create_new_session(
+        cls, user_agent: str | None = None, ip_address: str | None = None
+    ) -> "Session":
         """Create a new session with a unique session_id"""
         return cls(
-            session_id=str(uuid.uuid4()),
-            user_agent=user_agent,
-            ip_address=ip_address
+            session_id=str(uuid.uuid4()), user_agent=user_agent, ip_address=ip_address
         )
 
     def is_expired(self) -> bool:

@@ -1,9 +1,12 @@
-from typing import List, Optional, Annotated
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from typing import Annotated
+
 from fastapi import Depends
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_session
-from app.models.vacancy import Vacancy, VacancyCreate, VacancyUpdate
+from app.models.vacancy import Vacancy
+
 from .base_repository import BaseRepository
 
 
@@ -11,12 +14,12 @@ class VacancyRepository(BaseRepository[Vacancy]):
     def __init__(self, session: Annotated[AsyncSession, Depends(get_session)]):
         super().__init__(Vacancy, session)
 
-    async def get_by_company(self, company_name: str) -> List[Vacancy]:
+    async def get_by_company(self, company_name: str) -> list[Vacancy]:
         statement = select(Vacancy).where(Vacancy.company_name == company_name)
         result = await self._session.execute(statement)
         return result.scalars().all()
 
-    async def get_active(self, skip: int = 0, limit: int = 100) -> List[Vacancy]:
+    async def get_active(self, skip: int = 0, limit: int = 100) -> list[Vacancy]:
         statement = (
             select(Vacancy)
             .where(Vacancy.is_archived == False)
@@ -28,12 +31,12 @@ class VacancyRepository(BaseRepository[Vacancy]):
 
     async def search(
         self,
-        title: Optional[str] = None,
-        company_name: Optional[str] = None,
-        area_name: Optional[str] = None,
+        title: str | None = None,
+        company_name: str | None = None,
+        area_name: str | None = None,
         skip: int = 0,
-        limit: int = 100
-    ) -> List[Vacancy]:
+        limit: int = 100,
+    ) -> list[Vacancy]:
         """Поиск вакансий по критериям"""
         statement = select(Vacancy)
         conditions = []
@@ -52,28 +55,29 @@ class VacancyRepository(BaseRepository[Vacancy]):
         result = await self._session.execute(statement)
         return result.scalars().all()
 
-
-    async def get_active_vacancies(self, skip: int = 0, limit: int = 100) -> List[Vacancy]:
+    async def get_active_vacancies(
+        self, skip: int = 0, limit: int = 100
+    ) -> list[Vacancy]:
         """Получить активные вакансии (алиас для get_active)"""
         return await self.get_active(skip=skip, limit=limit)
 
     async def search_vacancies(
         self,
-        title: Optional[str] = None,
-        company_name: Optional[str] = None,
-        area_name: Optional[str] = None,
+        title: str | None = None,
+        company_name: str | None = None,
+        area_name: str | None = None,
         skip: int = 0,
-        limit: int = 100
-    ) -> List[Vacancy]:
+        limit: int = 100,
+    ) -> list[Vacancy]:
         """Поиск вакансий (алиас для search)"""
         return await self.search(
             title=title,
             company_name=company_name,
             area_name=area_name,
             skip=skip,
-            limit=limit
+            limit=limit,
         )
 
-    async def archive(self, vacancy_id: int) -> Optional[Vacancy]:
+    async def archive(self, vacancy_id: int) -> Vacancy | None:
         """Архивировать вакансию"""
         return await self.update(vacancy_id, {"is_active": False})

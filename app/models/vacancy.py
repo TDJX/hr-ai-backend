@@ -1,7 +1,7 @@
-from sqlmodel import SQLModel, Field
-from typing import Optional, List
 from datetime import datetime
 from enum import Enum
+
+from sqlmodel import Field, SQLModel
 
 
 class EmploymentType(str, Enum):
@@ -15,7 +15,7 @@ class EmploymentType(str, Enum):
 class Experience(str, Enum):
     NO_EXPERIENCE = "noExperience"
     BETWEEN_1_AND_3 = "between1And3"
-    BETWEEN_3_AND_6 = "between3And6" 
+    BETWEEN_3_AND_6 = "between3And6"
     MORE_THAN_6 = "moreThan6"
 
 
@@ -30,31 +30,31 @@ class Schedule(str, Enum):
 class VacancyBase(SQLModel):
     title: str = Field(max_length=255)
     description: str
-    key_skills: Optional[str] = None
+    key_skills: str | None = None
     employment_type: EmploymentType
     experience: Experience
     schedule: Schedule
-    salary_from: Optional[int] = None
-    salary_to: Optional[int] = None
-    salary_currency: Optional[str] = Field(default="RUR", max_length=3)
-    gross_salary: Optional[bool] = False
+    salary_from: int | None = None
+    salary_to: int | None = None
+    salary_currency: str | None = Field(default="RUR", max_length=3)
+    gross_salary: bool | None = False
     company_name: str = Field(max_length=255)
-    company_description: Optional[str] = None
+    company_description: str | None = None
     area_name: str = Field(max_length=255)
-    metro_stations: Optional[str] = None
-    address: Optional[str] = None
-    professional_roles: Optional[str] = None
-    contacts_name: Optional[str] = Field(max_length=255)
-    contacts_email: Optional[str] = Field(max_length=255)
-    contacts_phone: Optional[str] = Field(max_length=50)
+    metro_stations: str | None = None
+    address: str | None = None
+    professional_roles: str | None = None
+    contacts_name: str | None = Field(max_length=255)
+    contacts_email: str | None = Field(max_length=255)
+    contacts_phone: str | None = Field(max_length=50)
     is_archived: bool = Field(default=False)
     premium: bool = Field(default=False)
-    published_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
-    url: Optional[str] = None
+    published_at: datetime | None = Field(default_factory=datetime.utcnow)
+    url: str | None = None
 
 
 class Vacancy(VacancyBase, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -64,29 +64,29 @@ class VacancyCreate(VacancyBase):
 
 
 class VacancyUpdate(SQLModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    key_skills: Optional[str] = None
-    employment_type: Optional[EmploymentType] = None
-    experience: Optional[Experience] = None
-    schedule: Optional[Schedule] = None
-    salary_from: Optional[int] = None
-    salary_to: Optional[int] = None
-    salary_currency: Optional[str] = None
-    gross_salary: Optional[bool] = None
-    company_name: Optional[str] = None
-    company_description: Optional[str] = None
-    area_name: Optional[str] = None
-    metro_stations: Optional[str] = None
-    address: Optional[str] = None
-    professional_roles: Optional[str] = None
-    contacts_name: Optional[str] = None
-    contacts_email: Optional[str] = None
-    contacts_phone: Optional[str] = None
-    is_archived: Optional[bool] = None
-    premium: Optional[bool] = None
-    published_at: Optional[datetime] = None
-    url: Optional[str] = None
+    title: str | None = None
+    description: str | None = None
+    key_skills: str | None = None
+    employment_type: EmploymentType | None = None
+    experience: Experience | None = None
+    schedule: Schedule | None = None
+    salary_from: int | None = None
+    salary_to: int | None = None
+    salary_currency: str | None = None
+    gross_salary: bool | None = None
+    company_name: str | None = None
+    company_description: str | None = None
+    area_name: str | None = None
+    metro_stations: str | None = None
+    address: str | None = None
+    professional_roles: str | None = None
+    contacts_name: str | None = None
+    contacts_email: str | None = None
+    contacts_phone: str | None = None
+    is_archived: bool | None = None
+    premium: bool | None = None
+    published_at: datetime | None = None
+    url: str | None = None
 
 
 class VacancyRead(VacancyBase):
