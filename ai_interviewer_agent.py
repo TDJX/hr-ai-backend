@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from datetime import datetime
 
 # Принудительно устанавливаем UTF-8 для Windows
@@ -23,6 +24,7 @@ from app.core.database import get_session
 from app.repositories.interview_repository import InterviewRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.services.interview_finalization_service import InterviewFinalizationService
+from app.services.interview_service import InterviewRoomService
 from rag.settings import settings
 
 logger = logging.getLogger("ai-interviewer")
@@ -61,7 +63,7 @@ class InterviewAgent:
         self.last_user_response = None
         self.intro_done = False  # Новый флаг — произнесено ли приветствие
         self.interview_finalized = False  # Флаг завершения интервью
-
+        
         # Трекинг времени интервью
         import time
 
@@ -160,8 +162,34 @@ class InterviewAgent:
 - Опыт работы: {candidate_years} лет
 - Ключевые навыки: {candidate_skills}
 
-ПЛАН ИНТЕРВЬЮ (используй как руководство, но адаптируйся):
+ЦЕЛЬ ИНТЕРВЬЮ:
+
+Найти кандидата, который не только подходит по техническим навыкам, но и силён по мягким навыкам, культуре и потенциалу.
+Задачи интервью:
+- Выявить сильные и слабые стороны кандидата.
+- Понять, насколько он подходит к вакансии и соответствует интервью.
+- Проверить мышление, мотивацию и способность адаптироваться.
+
+ПОКАЗАТЕЛИ "ДОСТОЙНОГО КАНДИДАТА":
+- Глубокое понимание ключевых технологий ({candidate_skills}).
+- Умение решать проблемы, а не просто отвечать на вопросы.
+- Чёткая и логичная коммуникация.
+- Способность учиться и адаптироваться.
+- Совпадение ценностей и принципов с командой и компанией.
+
+ПЛАН ИНТЕРВЬЮ (как руководство, адаптируйся по ситуации)
+
 {sections_info}
+
+ТИПЫ ВОПРОСОВ:
+Поведенческие (30%) — выяснить, как кандидат действовал в реальных ситуациях.
+Пример: "Расскажи про ситуацию, когда ты столкнулся с трудной задачей на проекте. Что ты сделал?"
+
+Технические (50%) — проверить глубину знаний и практические навыки.
+Пример: "Как бы ты реализовал X?" или "Объясни разницу между A и B."
+
+Проблемные / кейсы (20%) — проверить мышление и подход к решению.
+Пример: "У нас есть система, которая падает раз в неделю. Как бы ты подошёл к диагностике проблемы?"
 
 ВРЕМЯ ИНТЕРВЬЮ:
 - Запланированная длительность: {self.duration_minutes} минут
@@ -172,26 +200,36 @@ class InterviewAgent:
 ФОКУС-ОБЛАСТИ: {focus_areas_str}
 КЛЮЧЕВЫЕ ОЦЕНОЧНЫЕ ТОЧКИ: {evaluation_points_str}
 
+КРАСНЫЕ ФЛАГИ:
+Во время интервью отмечай следующие негативные сигналы:
+- Не может объяснить собственные решения.
+- Противоречит сам себе или врёт.
+- Агрессивная, пассивная или неуважительная коммуникация.
+- Нет желания учиться или интереса к проекту.
+- Перекладывает ответственность на других, не признаёт ошибок.
+
 ИНСТРУКЦИИ:
 1. Начни с приветствия: {greeting}
 2. Адаптируй вопросы под ответы кандидата
+3. Не повторяй то, что клиент тебе сказал, лучше показывай, что понял, услышал и иди дальше. Лишний раз его не хвали
 3. Следи за временем - при превышении 80% времени начинай завершать интервью
 4. Оценивай качество и глубину ответов кандидата
-5. Завершай интервью если:
+5. Если получаешь сообщение "[СИСТЕМА] Клиент молчит..." - это означает проблемы со связью или кандидат растерялся. Скажи что-то вроде "Приём! Ты меня слышишь?" или "Всё в порядке? Связь не пропала?"
+6. Завершай интервью если:
    - Получил достаточно информации для оценки
    - Время почти истекло (>90% от запланированного)
    - Кандидат дал исчерпывающие ответы
-6. При завершении спроси о вопросах кандидата и поблагодари
+   - Получаешь сообщение "[СИСТЕМА] Похоже клиент отключился"
+7. При завершении спроси о вопросах кандидата и поблагодари
 
 ВАЖНО: Отвечай естественно и разговорно, как живой интервьюер!
 
 ЗАВЕРШЕНИЕ ИНТЕРВЬЮ:
 Когда нужно завершить интервью (время истекло, получена достаточная информация), 
-используй одну из этих ключевых фраз:
-- "Спасибо за интересную беседу! У тебя есть вопросы ко мне?"
-- "Это всё, что я хотел узнать. Есть ли у вас вопросы?"  
-- "Интервью подходит к концу. У тебя есть вопросы ко мне?"
-ФИНАЛЬНАЯ ФРАЗА после которой ничего не будет:
+используй фразу типа:
+- "Спасибо за интересную беседу! Интервью подходит к концу. У тебя есть вопросы ко мне?"
+
+ФИНАЛЬНАЯ ФРАЗА после которой конец интервью:
 - До скорой встречи!
 
 ЗАВЕРШАЙ ИНТЕРВЬЮ, если:
@@ -288,8 +326,8 @@ async def entrypoint(ctx: JobContext):
         logger.info("[INIT] Using default interview plan")
         interview_plan = {
             "interview_structure": {
-                "duration_minutes": 2,  # ТЕСТОВЫЙ РЕЖИМ - 2 минуты
-                "greeting": "Привет! Это быстрое тестовое интервью на 2 минуты. Готов?",
+                "duration_minutes": 5,  # ТЕСТОВЫЙ РЕЖИМ - 5 минут
+                "greeting": "Привет! Это быстрое тестовое интервью на 5 минут. Готов?",
                 "sections": [
                     {
                         "name": "Знакомство",
@@ -348,8 +386,14 @@ async def entrypoint(ctx: JobContext):
     # Создаем обычный Agent и Session
     agent = Agent(instructions=interviewer.get_system_instructions())
 
-    # Создаем AgentSession с обычным TTS
-    session = AgentSession(vad=silero.VAD.load(), stt=stt, llm=llm, tts=tts)
+    # Создаем AgentSession с обычным TTS и детекцией неактивности пользователя
+    session = AgentSession(
+        vad=silero.VAD.load(), 
+        stt=stt, 
+        llm=llm, 
+        tts=tts,
+        user_away_timeout=7.0  # 7 секунд неактивности для срабатывания away
+    )
 
     # --- Сохранение диалога в БД ---
     async def save_dialogue_to_db(room_name: str, dialogue_history: list):
@@ -446,7 +490,20 @@ async def entrypoint(ctx: JobContext):
 
                 if not interviewer.interview_finalized:
                     # Запускаем полную цепочку завершения интервью
-                    await complete_interview_sequence(ctx.room.name, interviewer)
+                    try:
+                        session_generator = get_session()
+                        db = await anext(session_generator)
+                        try:
+                            interview_repo = InterviewRepository(db)
+                            resume_repo = ResumeRepository(db)
+                            interview_service = InterviewRoomService(
+                                interview_repo, resume_repo
+                            )
+                            await interview_service.end_interview_session(session_id)
+                        finally:
+                            await session_generator.aclose()
+                    except Exception as e:
+                        logger.error(f"[FINALIZE] Error finalizing interview: {str(e)}")
                     return True
                 break
 
@@ -477,7 +534,7 @@ async def entrypoint(ctx: JobContext):
                             )
                             break
 
-                await asyncio.sleep(2)  # Проверяем каждые 2 секунды
+                await asyncio.sleep(1)  # Проверяем каждые 1 секунды
 
             except Exception as e:
                 logger.error(f"[COMMAND] Error monitoring commands: {str(e)}")
@@ -485,6 +542,22 @@ async def entrypoint(ctx: JobContext):
 
     # Запускаем мониторинг команд в фоне
     asyncio.create_task(monitor_end_commands())
+    
+    # --- Обработчик состояния пользователя (замена мониторинга тишины) ---
+    @session.on("user_state_changed")
+    def on_user_state_changed(event):
+        """Обработчик изменения состояния пользователя (активен/неактивен)"""
+        async def on_change():
+            logger.info(f"[USER_STATE] User state changed to: {event.new_state}")
+
+            if event.new_state == "away" and interviewer.intro_done:
+                logger.info("[USER_STATE] User went away, generating response...")
+
+                # Генерируем ответ через LLM с инструкциями
+                await session.generate_reply(
+                    instructions="Клиент молчит уже больше 10 секунд. Проверь связь фразой вроде 'Приём! Ты меня слышишь?' или 'Связь не пропала?'"
+                )
+        asyncio.create_task(on_change())
 
     # --- Полная цепочка завершения интервью ---
     async def complete_interview_sequence(room_name: str, interviewer_instance):
@@ -494,47 +567,31 @@ async def entrypoint(ctx: JobContext):
         2. Закрытие комнаты LiveKit
         3. Завершение процесса агента
         """
+        logger.info("[SEQUENCE] Starting interview completion sequence")
+
+        # Шаг 1: Финализируем интервью в БД
+        logger.info("[SEQUENCE] Step 1: Finalizing interview in database")
+        await finalize_interview(room_name, interviewer_instance)
+        logger.info("[SEQUENCE] Step 1: Database finalization completed")
+
+        # Даём время на завершение всех DB операций
+        await asyncio.sleep(1)
+
+        # Шаг 2: Закрываем комнату LiveKit
+        logger.info("[SEQUENCE] Step 2: Closing LiveKit room")
         try:
-            logger.info("[SEQUENCE] Starting interview completion sequence")
-
-            # Шаг 1: Финализируем интервью в БД
-            logger.info("[SEQUENCE] Step 1: Finalizing interview in database")
-            await finalize_interview(room_name, interviewer_instance)
-            logger.info("[SEQUENCE] Step 1: Database finalization completed")
-
-            # Даём время на завершение всех DB операций
-            await asyncio.sleep(1)
-
-            # Шаг 2: Закрываем комнату LiveKit
-            logger.info("[SEQUENCE] Step 2: Closing LiveKit room")
-            try:
-                await close_room(room_name)
-                logger.info(f"[SEQUENCE] Step 2: Room {room_name} closed successfully")
-            except Exception as e:
-                logger.error(f"[SEQUENCE] Step 2: Failed to close room: {str(e)}")
-                logger.info(
-                    "[SEQUENCE] Step 2: Room closure failed, but continuing sequence"
-                )
-
-            # Шаг 3: Завершаем процесс агента
-            logger.info("[SEQUENCE] Step 3: Terminating agent process")
-            await asyncio.sleep(2)  # Даём время на завершение всех операций
-            logger.info("[SEQUENCE] Step 3: Force terminating agent process")
-            import os
-
-            os._exit(0)  # Принудительное завершение процесса
-
+            await close_room(room_name)
+            logger.info(f"[SEQUENCE] Step 2: Room {room_name} closed successfully")
         except Exception as e:
-            logger.error(f"[SEQUENCE] Error in interview completion sequence: {str(e)}")
-            # Fallback: принудительно завершаем процесс даже при ошибках
-            logger.info("[SEQUENCE] Fallback: Force terminating process")
-            await asyncio.sleep(1)
-            import os
+            logger.error(f"[SEQUENCE] Step 2: Failed to close room: {str(e)}")
+            logger.info(
+                "[SEQUENCE] Step 2: Room closure failed, but continuing sequence"
+            )
 
-            os._exit(1)
-
+    
     # --- Упрощенная логика обработки пользовательского ответа ---
     async def handle_user_input(user_response: str):
+        
         current_section = interviewer.get_current_section()
 
         # Сохраняем ответ пользователя
@@ -575,6 +632,7 @@ async def entrypoint(ctx: JobContext):
         if role == "user":
             asyncio.create_task(handle_user_input(text))
         elif role == "assistant":
+            
             # Сохраняем ответ агента в историю диалога
             current_section = interviewer.get_current_section()
             interviewer.conversation_history.append(

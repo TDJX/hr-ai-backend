@@ -51,15 +51,30 @@ def generate_interview_report(resume_id: int):
 
             # Получаем историю интервью
             interview_session = _get_interview_session(db, resume_id)
+            logger.info(f"[INTERVIEW_ANALYSIS] Found interview_session: {interview_session is not None}")
+            
+            if interview_session:
+                logger.info(f"[INTERVIEW_ANALYSIS] Session ID: {interview_session.id}, dialogue_history length: {len(interview_session.dialogue_history) if interview_session.dialogue_history else 0}")
+            else:
+                logger.warning(f"[INTERVIEW_ANALYSIS] No interview session found for resume_id: {resume_id}")
 
             # Парсим JSON данные
             parsed_resume = _parse_json_field(resume.parsed_data)
             interview_plan = _parse_json_field(resume.interview_plan)
-            dialogue_history = (
-                _parse_json_field(interview_session.dialogue_history)
-                if interview_session
-                else []
-            )
+            # Парсим dialogue_history отдельно (это список, а не словарь)
+            dialogue_history = []
+            if interview_session and interview_session.dialogue_history:
+                if isinstance(interview_session.dialogue_history, list):
+                    dialogue_history = interview_session.dialogue_history
+                elif isinstance(interview_session.dialogue_history, str):
+                    try:
+                        dialogue_history = json.loads(interview_session.dialogue_history)
+                        if not isinstance(dialogue_history, list):
+                            dialogue_history = []
+                    except (json.JSONDecodeError, TypeError):
+                        dialogue_history = []
+            
+            logger.info(f"[INTERVIEW_ANALYSIS] Parsed dialogue_history length: {len(dialogue_history)}")
 
             # Генерируем отчет
             report = _generate_comprehensive_report(
@@ -140,11 +155,25 @@ def _get_interview_session(db, resume_id: int):
     try:
         from app.models.interview import InterviewSession
 
-        return (
+        logger.info(f"[GET_SESSION] Looking for interview session with resume_id: {resume_id}")
+        
+        session = (
             db.query(InterviewSession)
             .filter(InterviewSession.resume_id == resume_id)
             .first()
         )
+        
+        if session:
+            logger.info(f"[GET_SESSION] Found session {session.id} for resume {resume_id}")
+            logger.info(f"[GET_SESSION] Session status: {session.status}")
+            logger.info(f"[GET_SESSION] Dialogue history type: {type(session.dialogue_history)}")
+            if session.dialogue_history:
+                logger.info(f"[GET_SESSION] Raw dialogue_history preview: {str(session.dialogue_history)[:200]}...")
+        else:
+            logger.warning(f"[GET_SESSION] No session found for resume_id: {resume_id}")
+            
+        return session
+        
     except Exception as e:
         logger.error(f"Error getting interview session: {e}")
         return None
