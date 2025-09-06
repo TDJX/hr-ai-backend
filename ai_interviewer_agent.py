@@ -415,7 +415,7 @@ async def entrypoint(ctx: JobContext):
 
     # LLM
     llm = openai.LLM(
-        model="gpt-4o-mini", api_key=settings.openai_api_key, temperature=0.7
+        model="gpt-4o", api_key=settings.openai_api_key, temperature=0.7
     )
 
     # TTS

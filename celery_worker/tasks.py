@@ -55,12 +55,16 @@ def generate_interview_plan(
         compatibility_prompt = f"""
         Проанализируй (не строго!) соответствие кандидата вакансии и определи, стоит ли проводить интервью.
         
-        КЛЮЧЕВЫЕ И ЕДИНСТВЕННЫЕ КРИТЕРИИ ОТКЛОНЕНИЯ:
+        КЛЮЧЕВОЙ И ЕДИНСТВЕННЫй КРИТЕРИЙ ОТКЛОНЕНИЯ:
         1. Профессиональная область кандидата: Полное несоответствие сферы деятельности вакансии (иначе 100 за критерий)
+        ДОПУСТИМЫЕ КРИТЕРИИ:
         2. Остальные показатели кандидата хотя бы примерно соответствуют вакансии: скиллы кандидата похожи или смежны вакансионным, опыт не сильно отдален 
         от указанного 
+        3. Учитывай опыт с аналогичными, похожими, смежными технологиями
+        4. Когда смотришь на вакансию и кандидата не учитывай строгие слова, такие как "Требования", "Ключевые" и тп. Это лишь маркеры, 
+        но не оценочные указатели
         
-        КАНДИДАТ:
+        КАНДИДАТ: 
         - Имя: {combined_data.get("name", "Не указано")}
         - Навыки: {", ".join(combined_data.get("skills", []))}
         - Общий опыт: {combined_data.get("total_years", 0)} лет
@@ -105,8 +109,7 @@ def generate_interview_plan(
             end = compatibility_text.rfind("}") + 1
             if start != -1 and end > start:
                 compatibility_result = json.loads(compatibility_text[start:end])
-        print("compatibility_text", compatibility_text)
-        print("compatibility_result", compatibility_result)
+
         # Если кандидат не подходит - возвращаем результат отклонения
         if not compatibility_result or not compatibility_result.get("is_suitable", True):
             return {
