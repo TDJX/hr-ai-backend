@@ -134,7 +134,7 @@ class AgentManager:
                 return False
 
     async def assign_session(
-        self, session_id: int, room_name: str, interview_plan: dict
+        self, session_id: int, room_name: str, interview_plan: dict, vacancy_data: dict = None
     ) -> bool:
         """Назначает агенту конкретную сессию интервью"""
         async with self._lock:
@@ -153,18 +153,19 @@ class AgentManager:
             try:
                 # Создаем файл метаданных для сессии
                 metadata_file = f"session_metadata_{session_id}.json"
+                metadata = {
+                    "session_id": session_id,
+                    "room_name": room_name,
+                    "interview_plan": interview_plan,
+                    "command": "start_interview",
+                }
+                
+                # Добавляем данные вакансии если они переданы
+                if vacancy_data:
+                    metadata["vacancy_data"] = vacancy_data
+                    
                 with open(metadata_file, "w", encoding="utf-8") as f:
-                    json.dump(
-                        {
-                            "session_id": session_id,
-                            "room_name": room_name,
-                            "interview_plan": interview_plan,
-                            "command": "start_interview",
-                        },
-                        f,
-                        ensure_ascii=False,
-                        indent=2,
-                    )
+                    json.dump(metadata, f, ensure_ascii=False, indent=2)
 
                 # Отправляем сигнал агенту через файл команд
                 command_file = "agent_commands.json"

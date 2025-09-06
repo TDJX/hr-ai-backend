@@ -24,7 +24,6 @@ from app.core.database import get_session
 from app.repositories.interview_repository import InterviewRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.services.interview_finalization_service import InterviewFinalizationService
-from app.services.interview_service import InterviewRoomService
 from rag.settings import settings
 
 logger = logging.getLogger("ai-interviewer")
@@ -50,8 +49,9 @@ async def close_room(room_name: str):
 class InterviewAgent:
     """AI Agent для проведения собеседований с управлением диалогом"""
 
-    def __init__(self, interview_plan: dict):
+    def __init__(self, interview_plan: dict, vacancy_data=None):
         self.interview_plan = interview_plan
+        self.vacancy_data = vacancy_data
         self.conversation_history = []
 
         # Состояние диалога
@@ -155,7 +155,49 @@ class InterviewAgent:
         else:
             time_status = "НОРМАЛЬНО"
 
-        return f"""Ты опытный HR-интервьюер, который проводит адаптивное голосовое собеседование.
+        # Информация о вакансии
+        vacancy_info = ""
+        if self.vacancy_data:
+            employment_type_map = {
+                "full": "Полная занятость",
+                "part": "Частичная занятость", 
+                "project": "Проектная работа",
+                "volunteer": "Волонтёрство",
+                "probation": "Стажировка"
+            }
+            experience_map = {
+                "noExperience": "Без опыта",
+                "between1And3": "1-3 года",
+                "between3And6": "3-6 лет", 
+                "moreThan6": "Более 6 лет"
+            }
+            schedule_map = {
+                "fullDay": "Полный день",
+                "shift": "Сменный график",
+                "flexible": "Гибкий график",
+                "remote": "Удалённая работа",
+                "flyInFlyOut": "Вахтовый метод"
+            }
+            
+            vacancy_info = f"""
+
+ИНФОРМАЦИЯ О ВАКАНСИИ:
+- Должность: {self.vacancy_data.get('title', 'Не указана')}
+- Описание: {self.vacancy_data.get('description', 'Не указано')}
+- Ключевые навыки: {self.vacancy_data.get('key_skills') or 'Не указаны'}
+- Тип занятости: {employment_type_map.get(self.vacancy_data.get('employment_type'), self.vacancy_data.get('employment_type', 'Не указан'))}
+- Опыт работы: {experience_map.get(self.vacancy_data.get('experience'), self.vacancy_data.get('experience', 'Не указан'))}
+- График работы: {schedule_map.get(self.vacancy_data.get('schedule'), self.vacancy_data.get('schedule', 'Не указан'))}
+- Регион: {self.vacancy_data.get('area_name', 'Не указан')}
+- Профессиональные роли: {self.vacancy_data.get('professional_roles') or 'Не указаны'}
+- Контактное лицо: {self.vacancy_data.get('contacts_name') or 'Не указано'}"""
+
+        return f"""
+Ты опытный HR-интервьюер, который проводит адаптивное голосовое собеседование. Представься контактным именем из вакансии (если оно есть)
+
+ИНФОРМАЦИЯ О ВАКАНСИИ:
+
+{vacancy_info}
 
 ИНФОРМАЦИЯ О КАНДИДАТЕ:
 - Имя: {candidate_name}
@@ -279,6 +321,7 @@ async def entrypoint(ctx: JobContext):
     # План интервью - получаем из метаданных сессии
     interview_plan = {}
     session_id = None
+    vacancy_data = None
 
     # Проверяем файлы команд для получения сессии
     command_file = "agent_commands.json"
@@ -313,11 +356,15 @@ async def entrypoint(ctx: JobContext):
             with open(metadata_file, encoding="utf-8") as f:
                 metadata = json.load(f)
                 interview_plan = metadata.get("interview_plan", {})
+                vacancy_data = metadata.get("vacancy_data", None)
                 session_id = metadata.get("session_id", session_id)
                 logger.info(f"[INIT] Loaded interview plan for session {session_id}")
+                if vacancy_data:
+                    logger.info(f"[INIT] Loaded vacancy data from metadata: {vacancy_data.get('title', 'Unknown')}")
         except Exception as e:
             logger.warning(f"[INIT] Failed to load metadata: {str(e)}")
             interview_plan = {}
+            vacancy_data = None
 
     # Используем дефолтный план если план пустой или нет секций
     if not interview_plan or not interview_plan.get("interview_structure", {}).get(
@@ -350,7 +397,7 @@ async def entrypoint(ctx: JobContext):
             "key_evaluation_points": ["Коммуникация"],
         }
 
-    interviewer = InterviewAgent(interview_plan)
+    interviewer = InterviewAgent(interview_plan, vacancy_data)
     logger.info(
         f"[INIT] InterviewAgent created with {len(interviewer.sections)} sections"
     )
@@ -489,23 +536,10 @@ async def entrypoint(ctx: JobContext):
                 )
 
                 if not interviewer.interview_finalized:
-                    # Запускаем полную цепочку завершения интервью
-                    try:
-                        session_generator = get_session()
-                        db = await anext(session_generator)
-                        try:
-                            interview_repo = InterviewRepository(db)
-                            resume_repo = ResumeRepository(db)
-                            interview_service = InterviewRoomService(
-                                interview_repo, resume_repo
-                            )
-                            await interview_service.end_interview_session(session_id)
-                        finally:
-                            await session_generator.aclose()
-                    except Exception as e:
-                        logger.error(f"[FINALIZE] Error finalizing interview: {str(e)}")
-                    return True
-                break
+                    await complete_interview_sequence(
+                        ctx.room.name, interviewer
+                    )
+                    break
 
         return False
 
@@ -544,19 +578,62 @@ async def entrypoint(ctx: JobContext):
     asyncio.create_task(monitor_end_commands())
     
     # --- Обработчик состояния пользователя (замена мониторинга тишины) ---
+    disconnect_timer: asyncio.Task | None = None
+    
     @session.on("user_state_changed")
     def on_user_state_changed(event):
         """Обработчик изменения состояния пользователя (активен/неактивен)"""
+        
         async def on_change():
+            nonlocal disconnect_timer
+
             logger.info(f"[USER_STATE] User state changed to: {event.new_state}")
 
-            if event.new_state == "away" and interviewer.intro_done:
-                logger.info("[USER_STATE] User went away, generating response...")
+            # === Пользователь начал говорить ===
+            if event.new_state == "speaking":
+                # Если есть таймер на 30 секунд — отменяем его
+                if disconnect_timer is not None:
+                    logger.info("[USER_STATE] Cancelling disconnect timer due to speaking")
+                    disconnect_timer.cancel()
+                    disconnect_timer = None
 
-                # Генерируем ответ через LLM с инструкциями
-                await session.generate_reply(
-                    instructions="Клиент молчит уже больше 10 секунд. Проверь связь фразой вроде 'Приём! Ты меня слышишь?' или 'Связь не пропала?'"
+            # === Пользователь молчит более 10 секунд (state == away) ===
+            elif event.new_state == "away" and interviewer.intro_done:
+                logger.info("[USER_STATE] User away detected, sending check-in message...")
+
+                # 1) Первое сообщение — проверка связи
+                handle = await session.generate_reply(
+                    instructions=(
+                        "Клиент молчит уже больше 10 секунд. "
+                        "Проверь связь фразой вроде 'Приём! Ты меня слышишь?' "
+                        "или 'Связь не пропала?'"
+                    )
                 )
+                await handle  # ждем завершения первой реплики
+
+                # 2) Таймер на 30 секунд
+                async def disconnect_timeout():
+                    try:
+                        await asyncio.sleep(30)
+                        logger.info("[DISCONNECT_TIMER] 30 seconds passed, sending disconnect message")
+
+                        # Второе сообщение — считаем, что клиент отключился
+                        await session.generate_reply(
+                            instructions="Похоже клиент отключился"
+                        )
+                        
+                        logger.info("[DISCONNECT_TIMER] Disconnect message sent successfully")
+                    except asyncio.CancelledError:
+                        logger.info("[DISCONNECT_TIMER] Timer cancelled before completion")
+                    except Exception as e:
+                        logger.error(f"[DISCONNECT_TIMER] Error in disconnect timeout: {e}")
+
+                # 3) Если уже есть активный таймер — отменяем его перед запуском нового
+                if disconnect_timer is not None:
+                    disconnect_timer.cancel()
+
+                disconnect_timer = asyncio.create_task(disconnect_timeout())
+
         asyncio.create_task(on_change())
 
     # --- Полная цепочка завершения интервью ---

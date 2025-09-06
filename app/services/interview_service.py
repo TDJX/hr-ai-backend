@@ -13,6 +13,7 @@ from app.models.interview import (
 from app.models.resume import ResumeStatus
 from app.repositories.interview_repository import InterviewRepository
 from app.repositories.resume_repository import ResumeRepository
+from app.repositories.vacancy_repository import VacancyRepository
 from app.services.agent_manager import agent_manager
 from rag.settings import settings
 
@@ -22,9 +23,11 @@ class InterviewRoomService:
         self,
         interview_repo: Annotated[InterviewRepository, Depends(InterviewRepository)],
         resume_repo: Annotated[ResumeRepository, Depends(ResumeRepository)],
+        vacancy_repo: Annotated[VacancyRepository, Depends(VacancyRepository)],
     ):
         self.interview_repo = interview_repo
         self.resume_repo = resume_repo
+        self.vacancy_repo = vacancy_repo
         self.livekit_url = settings.livekit_url or "ws://localhost:7880"
         self.api_key = settings.livekit_api_key or "devkey"
         self.api_secret = settings.livekit_api_secret or "secret"
@@ -103,11 +106,6 @@ class InterviewRoomService:
     async def get_livekit_token(self, resume_id: int) -> LiveKitTokenResponse | None:
         """Создает сессию собеседования и возвращает токен для LiveKit"""
         try:
-            # Проверяем доступность агента
-            if not agent_manager.is_available():
-                print("[ERROR] AI Agent is not available for new interview")
-                return None
-
             # Валидируем резюме
             validation = await self.validate_resume_for_interview(resume_id)
             if not validation.can_interview:
@@ -124,34 +122,58 @@ class InterviewRoomService:
                     f"[DEBUG] Using existing interview session: {interview_session.id}"
                 )
             else:
+                # Проверяем доступность агента
+                if not agent_manager.is_available():
+                    print("[ERROR] AI Agent is not available for new interview")
+                    return None
+
                 # Создаем новую сессию собеседования
                 interview_session = await self.create_interview_session(resume_id)
                 if not interview_session:
                     return None
                 print(f"[DEBUG] Created new interview session: {interview_session.id}")
 
+                # Получаем готовый план интервью для AI агента
+                interview_plan = await self.get_resume_data_for_interview(resume_id)
+                
+                # Получаем данные вакансии
+                resume = await self.resume_repo.get(resume_id)
+                vacancy_data = None
+                if resume and resume.vacancy_id:
+                    vacancy = await self.vacancy_repo.get_by_id(resume.vacancy_id)
+                    if vacancy:
+                        # Конвертируем объект вакансии в словарь для JSON сериализации
+                        vacancy_data = {
+                            "title": vacancy.title,
+                            "description": vacancy.description,
+                            "key_skills": vacancy.key_skills,
+                            "employment_type": vacancy.employment_type,
+                            "experience": vacancy.experience,
+                            "schedule": vacancy.schedule,
+                            "area_name": vacancy.area_name,
+                            "professional_roles": vacancy.professional_roles,
+                            "contacts_name": vacancy.contacts_name,
+                        }
+
+                # Обновляем статус сессии на ACTIVE
+                await self.interview_repo.update_session_status(
+                    interview_session.id, "active"
+                )
+
+                # Назначаем сессию агенту через менеджер
+                success = await agent_manager.assign_session(
+                    interview_session.id, interview_session.room_name, interview_plan, vacancy_data
+                )
+
+                if not success:
+                    print("[ERROR] Failed to assign session to AI agent")
+                    return None
+
             # Генерируем токен
             participant_name = f"user_{resume_id}"
             token = self.generate_access_token(
                 interview_session.room_name, participant_name
             )
-
-            # Получаем готовый план интервью для AI агента
-            interview_plan = await self.get_resume_data_for_interview(resume_id)
-
-            # Обновляем статус сессии на ACTIVE
-            await self.interview_repo.update_session_status(
-                interview_session.id, "active"
-            )
-
-            # Назначаем сессию агенту через менеджер
-            success = await agent_manager.assign_session(
-                interview_session.id, interview_session.room_name, interview_plan
-            )
-
-            if not success:
-                print("[ERROR] Failed to assign session to AI agent")
-                return None
 
             return LiveKitTokenResponse(
                 token=token,

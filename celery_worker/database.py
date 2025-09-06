@@ -51,6 +51,7 @@ class SyncResumeRepository:
         status: str,
         parsed_data: dict = None,
         error_message: str = None,
+        rejection_reason: str = None,
     ):
         """Обновить статус резюме"""
         from datetime import datetime
@@ -71,6 +72,10 @@ class SyncResumeRepository:
                 resume.status = ResumeStatus.PARSE_FAILED
                 if error_message:
                     resume.parse_error = error_message
+            elif status == "rejected":
+                resume.status = ResumeStatus.REJECTED
+                if rejection_reason:
+                    resume.notes = f"ОТКЛОНЕНО: {rejection_reason}"
 
             resume.updated_at = datetime.utcnow()
             self.session.add(resume)
@@ -121,3 +126,16 @@ class SyncResumeRepository:
                     return data
             else:
                 return data
+
+
+class SyncVacancyRepository:
+    """Синхронный repository для работы с Vacancy в Celery tasks"""
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def get_by_id(self, vacancy_id: int):
+        """Получить вакансию по ID"""
+        from app.models.vacancy import Vacancy
+
+        return self.session.query(Vacancy).filter(Vacancy.id == vacancy_id).first()

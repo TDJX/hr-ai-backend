@@ -106,7 +106,28 @@ class ResumeParser:
     def extract_text_from_doc(self, file_path: str) -> str:
         """Извлекает текст из DOC файла"""
         try:
-            # Для .doc файлов используем antiword (если установлен) или попробуем python-docx
+            # Метод 1: COM автоматизация Word (самый надежный для Windows)
+            import os
+            if os.name == 'nt':  # Windows
+                try:
+                    import comtypes.client
+                    print(f"[DEBUG] Trying Word COM automation for {file_path}")
+                    
+                    word = comtypes.client.CreateObject('Word.Application')
+                    word.Visible = False
+                    
+                    doc = word.Documents.Open(file_path)
+                    text = doc.Content.Text
+                    doc.Close()
+                    word.Quit()
+                    
+                    if text and text.strip():
+                        print(f"[DEBUG] Word COM successfully extracted {len(text)} characters")
+                        return text.strip()
+                except Exception as e:
+                    print(f"[DEBUG] Word COM failed: {e}")
+            
+            # Метод 2: Для .doc файлов используем python-docx
             if Document:
                 try:
                     doc = Document(file_path)
@@ -116,20 +137,53 @@ class ResumeParser:
                     # Если python-docx не может прочитать .doc, пытаемся использовать системные утилиты
                     pass
 
-            # Попытка использовать системную команду antiword (для Linux/Mac)
-            import subprocess
-
+            # Попытка использовать textract (универсальная библиотека для извлечения текста)
             try:
-                result = subprocess.run(
-                    ["antiword", file_path], capture_output=True, text=True
-                )
-                if result.returncode == 0:
-                    return result.stdout.strip()
-            except FileNotFoundError:
+                import textract
+                print(f"[DEBUG] Using textract to process {file_path}")
+                text = textract.process(file_path).decode('utf-8')
+                if text and text.strip():
+                    print(f"[DEBUG] textract successfully extracted {len(text)} characters")
+                    return text.strip()
+                else:
+                    print("[DEBUG] textract returned empty text")
+            except ImportError as e:
+                print(f"[DEBUG] textract not available: {e}")
+            except Exception as e:
+                print(f"[DEBUG] textract failed: {e}")
+            
+            # Попытка использовать docx2txt
+            try:
+                import docx2txt
+                text = docx2txt.process(file_path)
+                if text:
+                    return text.strip()
+            except ImportError:
+                pass
+            except Exception:
+                pass
+            
+            # Попытка использовать oletools для старых DOC файлов
+            try:
+                from oletools.olevba import VBA_Parser
+                from oletools import olefile
+                
+                if olefile.isOleFile(file_path):
+                    # Это старый формат DOC, пытаемся извлечь текст
+                    # Пока что возвращаем информативную ошибку
+                    pass
+            except ImportError:
+                pass
+            except Exception:
                 pass
 
             raise Exception(
-                "Не удалось найти подходящий инструмент для чтения DOC файлов. Рекомендуется использовать DOCX формат."
+                "Не удалось извлечь текст из DOC файла ни одним из методов. "
+                "Возможные причины:\n"
+                "1. Microsoft Word не установлен (для COM автоматизации)\n"
+                "2. Файл поврежден или не содержит текста\n"
+                "3. Файл защищен паролем\n"
+                "Рекомендуется конвертировать DOC в DOCX формат."
             )
         except Exception as e:
             raise Exception(f"Ошибка при чтении DOC: {str(e)}") from e

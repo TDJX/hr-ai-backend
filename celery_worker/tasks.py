@@ -3,7 +3,7 @@ import os
 from typing import Any
 
 from celery_worker.celery_app import celery_app
-from celery_worker.database import SyncResumeRepository, get_sync_session
+from celery_worker.database import SyncResumeRepository, SyncVacancyRepository, get_sync_session
 from rag.llm.model import ResumeParser
 from rag.registry import registry
 
@@ -17,24 +17,105 @@ def generate_interview_plan(
     try:
         # Получаем данные о вакансии из БД
         with get_sync_session() as session:
-            repo = SyncResumeRepository(session)
-            resume_record = repo.get_by_id(resume_id)
-
+            resume_repo = SyncResumeRepository(session)
+            vacancy_repo = SyncVacancyRepository(session)
+            
+            resume_record = resume_repo.get_by_id(resume_id)
             if not resume_record:
-                return None
+                return {"is_suitable": False, "rejection_reason": "Резюме не найдено в БД"}
 
-            # Здесь нужно получить данные вакансии
-            # Пока используем заглушку, потом добавим связь с vacancy
+            # Получаем данные вакансии
+            vacancy_record = None
+            if resume_record.vacancy_id:
+                vacancy_record = vacancy_repo.get_by_id(resume_record.vacancy_id)
+            
+            if not vacancy_record:
+                return {"is_suitable": False, "rejection_reason": "Вакансия не найдена"}
+            
             vacancy_data = {
-                "title": "Python Developer",
-                "requirements": "Python, FastAPI, PostgreSQL, Docker",
-                "company_name": "Tech Company",
-                "experience_level": "Middle",
+                "title": vacancy_record.title,
+                "description": vacancy_record.description,
+                "key_skills": vacancy_record.key_skills,
+                "experience": vacancy_record.experience,
+                "area_name": vacancy_record.area_name,
+                "professional_roles": vacancy_record.professional_roles,
             }
 
-        # Генерируем план через LLM
+        # Сначала проверяем соответствие резюме и вакансии через LLM
         chat_model = registry.get_chat_model()
+        
+        # Формируем опыт кандидата
+        experience_map = {
+            "noExperience": "Без опыта",
+            "between1And3": "1-3 года",
+            "between3And6": "3-6 лет",
+            "moreThan6": "Более 6 лет"
+        }
+        
+        compatibility_prompt = f"""
+        Проанализируй (не строго!) соответствие кандидата вакансии и определи, стоит ли проводить интервью.
+        
+        КЛЮЧЕВЫЕ И ЕДИНСТВЕННЫЕ КРИТЕРИИ ОТКЛОНЕНИЯ:
+        1. Профессиональная область кандидата: Полное несоответствие сферы деятельности вакансии (иначе 100 за критерий)
+        2. Остальные показатели кандидата хотя бы примерно соответствуют вакансии: скиллы кандидата похожи или смежны вакансионным, опыт не сильно отдален 
+        от указанного 
+        
+        КАНДИДАТ:
+        - Имя: {combined_data.get("name", "Не указано")}
+        - Навыки: {", ".join(combined_data.get("skills", []))}
+        - Общий опыт: {combined_data.get("total_years", 0)} лет
+        - Образование: {combined_data.get("education", "Не указано")}
+        - Про работу: {combined_data.get("experience", "Не указано")}
+        - Саммари: {combined_data.get("summary", "Не указано")}
+        
+        ВАКАНСИЯ:
+        - Должность: {vacancy_data["title"]}
+        - Описание: {vacancy_data["description"]}...
+        - Ключевые навыки: {vacancy_data["key_skills"] or "Не указаны"}
+        - Требуемый опыт: {experience_map.get(vacancy_data["experience"], "Не указан")}
+        - Профессиональные роли: {vacancy_data["professional_roles"] or "Не указаны"}
+        
 
+        Верни ответ в JSON формате:
+        {{
+            "is_suitable": true/false,
+            "rejection_reason": "Конкретная подробная причина отклонения с цитированием (если is_suitable=false)",
+        }}
+        """
+        
+        from langchain.schema import HumanMessage, SystemMessage
+        
+        compatibility_messages = [
+            SystemMessage(
+                content="Ты эксперт по подбору персонала. Анализируй соответствие кандидатов вакансиям строго и объективно."
+            ),
+            HumanMessage(content=compatibility_prompt),
+        ]
+        
+        compatibility_response = chat_model.get_llm().invoke(compatibility_messages)
+        compatibility_text = compatibility_response.content.strip()
+        
+        # Парсим ответ о соответствии
+        compatibility_result = None
+        if compatibility_text.startswith("{") and compatibility_text.endswith("}"):
+            compatibility_result = json.loads(compatibility_text)
+        else:
+            # Ищем JSON в тексте
+            start = compatibility_text.find("{")
+            end = compatibility_text.rfind("}") + 1
+            if start != -1 and end > start:
+                compatibility_result = json.loads(compatibility_text[start:end])
+        print("compatibility_text", compatibility_text)
+        print("compatibility_result", compatibility_result)
+        # Если кандидат не подходит - возвращаем результат отклонения
+        if not compatibility_result or not compatibility_result.get("is_suitable", True):
+            return {
+                "is_suitable": False,
+                "rejection_reason": compatibility_result.get("rejection_reason", "Кандидат не соответствует требованиям вакансии") if compatibility_result else "Ошибка анализа соответствия",
+                "match_details": compatibility_result
+            }
+        
+        # Если кандидат подходит - генерируем план интервью
         plan_prompt = f"""
         Создай детальный план интервью для кандидата на основе его резюме и требований вакансии.
         
@@ -45,10 +126,10 @@ def generate_interview_plan(
         - Образование: {combined_data.get("education", "Не указано")}
         
         ВАКАНСИЯ:
-        - Позиция: {vacancy_data["title"]}
-        - Требования: {vacancy_data["requirements"]}
-        - Компания: {vacancy_data["company_name"]}
-        - Уровень: {vacancy_data["experience_level"]}
+        - Должность: {vacancy_data["title"]}
+        - Описание: {vacancy_data["description"]}...
+        - Ключевые навыки: {vacancy_data["key_skills"] or "Не указаны"}
+        - Требуемый опыт: {experience_map.get(vacancy_data["experience"], "Не указан")}
         
         Создай план интервью в формате JSON:
         {{
@@ -102,16 +183,27 @@ def generate_interview_plan(
         response_text = response.content.strip()
 
         # Парсим JSON ответ
+        interview_plan = None
         if response_text.startswith("{") and response_text.endswith("}"):
-            return json.loads(response_text)
+            interview_plan = json.loads(response_text)
         else:
             # Ищем JSON в тексте
             start = response_text.find("{")
             end = response_text.rfind("}") + 1
             if start != -1 and end > start:
-                return json.loads(response_text[start:end])
+                interview_plan = json.loads(response_text[start:end])
 
-        return None
+        if interview_plan:
+            # Добавляем информацию о том, что кандидат подходит
+            interview_plan["is_suitable"] = True
+            interview_plan["match_details"] = compatibility_result
+            return interview_plan
+            
+        return {
+            "is_suitable": True,
+            "match_details": compatibility_result,
+            "error": "Не удалось сгенерировать план интервью"
+        }
 
     except Exception as e:
         print(f"Ошибка генерации плана интервью: {str(e)}")
@@ -143,7 +235,6 @@ def parse_resume_task(self, resume_id: str, file_path: str):
         # Инициализируем модели из registry
         try:
             chat_model = registry.get_chat_model()
-            embeddings_model = registry.get_embeddings_model()
             vector_store = registry.get_vector_store()
         except Exception as e:
             # Обновляем статус в БД - ошибка инициализации
@@ -191,8 +282,8 @@ def parse_resume_task(self, resume_id: str, file_path: str):
 
         # Создаем комбинированные данные: навыки и опыт из парсинга, контакты из формы
         combined_data = parsed_resume.copy()
-        combined_data["name"] = applicant_name
-        combined_data["email"] = applicant_email
+        combined_data["name"] = applicant_name or parsed_resume.get("name", "")
+        combined_data["email"] = applicant_email or parsed_resume.get("email", "")
         combined_data["phone"] = applicant_phone or parsed_resume.get("phone", "")
 
         # Шаг 2: Векторизация и сохранение в Milvus
@@ -219,10 +310,42 @@ def parse_resume_task(self, resume_id: str, file_path: str):
 
         with get_sync_session() as session:
             repo = SyncResumeRepository(session)
-            repo.update_status(int(resume_id), "parsed", parsed_data=combined_data)
-            # Сохраняем план интервью
-            if interview_plan:
+            
+            # Проверяем результат генерации плана интервью
+            print("interview_plan", interview_plan)
+            if interview_plan and interview_plan.get("is_suitable", True):
+                # Кандидат подходит - обновляем статус на parsed
+                repo.update_status(int(resume_id), "parsed", parsed_data=combined_data)
+                # Сохраняем план интервью
                 repo.update_interview_plan(int(resume_id), interview_plan)
+            else:
+                # Кандидат не подходит - отклоняем
+                rejection_reason = interview_plan.get("rejection_reason", "Не соответствует требованиям вакансии") if interview_plan else "Ошибка анализа соответствия"
+                repo.update_status(
+                    int(resume_id), 
+                    "rejected", 
+                    parsed_data=combined_data,
+                    rejection_reason=rejection_reason
+                )
+                
+                # Завершаем с информацией об отклонении
+                self.update_state(
+                    state="SUCCESS",
+                    meta={
+                        "status": f"Резюме обработано, но кандидат отклонен: {rejection_reason}",
+                        "progress": 100,
+                        "result": combined_data,
+                        "rejected": True,
+                        "rejection_reason": rejection_reason
+                    },
+                )
+                
+                return {
+                    "resume_id": resume_id,
+                    "status": "rejected",
+                    "parsed_data": combined_data,
+                    "rejection_reason": rejection_reason
+                }
 
         # Завершено успешно
         self.update_state(
