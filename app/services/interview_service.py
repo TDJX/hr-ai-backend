@@ -182,6 +182,7 @@ class InterviewRoomService:
                 token=token,
                 room_name=interview_session.room_name,
                 server_url=self.livekit_url,
+                session_id=interview_session.id,
             )
 
         except Exception as e:

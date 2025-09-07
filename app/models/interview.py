@@ -73,3 +73,4 @@ class LiveKitTokenResponse(SQLModel):
     token: str
     room_name: str
     server_url: str
+    session_id: int

@@ -6,6 +6,8 @@ from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
     Paragraph,
     SimpleDocTemplate,
@@ -22,8 +24,42 @@ class PDFReportService:
     """Сервис для генерации PDF отчетов по интервью"""
 
     def __init__(self):
+        self._register_fonts()
         self.styles = getSampleStyleSheet()
         self._setup_custom_styles()
+
+    def _register_fonts(self):
+        """Регистрация шрифтов для поддержки кириллицы"""
+        try:
+            # Пытаемся использовать системные шрифты Windows
+            import os
+            
+            # Пути к шрифтам Windows
+            fonts_dir = "C:/Windows/Fonts"
+            
+            # Регистрируем Arial для русского текста
+            if os.path.exists(f"{fonts_dir}/arial.ttf"):
+                pdfmetrics.registerFont(TTFont('Arial-Unicode', f"{fonts_dir}/arial.ttf"))
+                pdfmetrics.registerFont(TTFont('Arial-Unicode-Bold', f"{fonts_dir}/arialbd.ttf"))
+            # Альтернативно используем Calibri
+            elif os.path.exists(f"{fonts_dir}/calibri.ttf"):
+                pdfmetrics.registerFont(TTFont('Arial-Unicode', f"{fonts_dir}/calibri.ttf"))
+                pdfmetrics.registerFont(TTFont('Arial-Unicode-Bold', f"{fonts_dir}/calibrib.ttf"))
+            # Если ничего не найдено, используем встроенный DejaVu
+            else:
+                # Fallback к стандартным шрифтам ReportLab с поддержкой Unicode
+                from reportlab.lib.fonts import addMapping
+                addMapping('Arial-Unicode', 0, 0, 'Helvetica')
+                addMapping('Arial-Unicode', 1, 0, 'Helvetica-Bold')
+                addMapping('Arial-Unicode', 0, 1, 'Helvetica-Oblique')
+                addMapping('Arial-Unicode', 1, 1, 'Helvetica-BoldOblique')
+                
+        except Exception as e:
+            print(f"Warning: Could not register custom fonts: {e}")
+            # Используем стандартные шрифты как fallback
+            from reportlab.lib.fonts import addMapping
+            addMapping('Arial-Unicode', 0, 0, 'Helvetica')
+            addMapping('Arial-Unicode', 1, 0, 'Helvetica-Bold')
 
     def _setup_custom_styles(self):
         """Настройка кастомных стилей для документа"""
@@ -36,7 +72,7 @@ class PDFReportService:
                 spaceAfter=30,
                 alignment=TA_CENTER,
                 textColor=colors.HexColor("#2E3440"),
-                fontName="Helvetica-Bold",
+                fontName="Arial-Unicode-Bold",
             )
         )
 
@@ -49,7 +85,7 @@ class PDFReportService:
                 spaceAfter=12,
                 spaceBefore=20,
                 textColor=colors.HexColor("#5E81AC"),
-                fontName="Helvetica-Bold",
+                fontName="Arial-Unicode-Bold",
             )
         )
 
@@ -62,19 +98,20 @@ class PDFReportService:
                 spaceAfter=8,
                 spaceBefore=15,
                 textColor=colors.HexColor("#81A1C1"),
-                fontName="Helvetica-Bold",
+                fontName="Arial-Unicode-Bold",
             )
         )
 
         # Обычный текст
         self.styles.add(
             ParagraphStyle(
-                name="BodyText",
+                name="CustomBodyText",
                 parent=self.styles["Normal"],
                 fontSize=10,
                 spaceAfter=6,
                 alignment=TA_JUSTIFY,
                 textColor=colors.HexColor("#2E3440"),
+                fontName="Arial-Unicode",
             )
         )
 
@@ -86,7 +123,7 @@ class PDFReportService:
                 fontSize=12,
                 alignment=TA_CENTER,
                 textColor=colors.HexColor("#5E81AC"),
-                fontName="Helvetica-Bold",
+                fontName="Arial-Unicode-Bold",
             )
         )
 
@@ -132,7 +169,7 @@ class PDFReportService:
             ["Кандидат:", candidate_name],
             ["Позиция:", position],
             ["Дата интервью:", report.created_at.strftime("%d.%m.%Y %H:%M")],
-            ["Общий балл:", f"<b>{report.overall_score}/100</b>"],
+            ["Общий балл:", f"{report.overall_score}/100"],
             ["Рекомендация:", self._format_recommendation(report.recommendation)],
         ]
 
@@ -141,7 +178,8 @@ class PDFReportService:
             TableStyle(
                 [
                     ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-                    ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                    ("FONTNAME", (0, 0), (0, -1), "Arial-Unicode-Bold"),
+                    ("FONTNAME", (1, 0), (-1, -1), "Arial-Unicode"),  # Правая колонка обычным шрифтом
                     ("FONTSIZE", (0, 0), (-1, -1), 10),
                     ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
                     ("TOPPADDING", (0, 0), (-1, -1), 6),
@@ -154,57 +192,71 @@ class PDFReportService:
         # Оценки по критериям
         story.append(Paragraph("Детальная оценка", self.styles["SectionHeader"]))
 
+        # Стиль для текста в таблице с автопереносом
+        table_text_style = ParagraphStyle(
+            name="TableText",
+            parent=self.styles["Normal"],
+            fontSize=8,
+            fontName="Arial-Unicode",
+            leading=10,
+        )
+        
         criteria_data = [
-            ["Критерий", "Балл", "Обоснование", "Риски"],
             [
-                "Технические навыки",
-                f"{report.technical_skills_score}/100",
-                report.technical_skills_justification or "—",
-                report.technical_skills_concerns or "—",
+                Paragraph("Критерий", self.styles["CustomBodyText"]),
+                Paragraph("Балл", self.styles["CustomBodyText"]),
+                Paragraph("Обоснование", self.styles["CustomBodyText"]),
+                Paragraph("Риски", self.styles["CustomBodyText"]),
             ],
             [
-                "Релевантность опыта",
-                f"{report.experience_relevance_score}/100",
-                report.experience_relevance_justification or "—",
-                report.experience_relevance_concerns or "—",
+                Paragraph("Технические навыки", table_text_style),
+                Paragraph(f"{report.technical_skills_score}/100", table_text_style),
+                Paragraph(report.technical_skills_justification or "—", table_text_style),
+                Paragraph(report.technical_skills_concerns or "—", table_text_style),
             ],
             [
-                "Коммуникация",
-                f"{report.communication_score}/100",
-                report.communication_justification or "—",
-                report.communication_concerns or "—",
+                Paragraph("Релевантность опыта", table_text_style),
+                Paragraph(f"{report.experience_relevance_score}/100", table_text_style),
+                Paragraph(report.experience_relevance_justification or "—", table_text_style),
+                Paragraph(report.experience_relevance_concerns or "—", table_text_style),
             ],
             [
-                "Решение задач",
-                f"{report.problem_solving_score}/100",
-                report.problem_solving_justification or "—",
-                report.problem_solving_concerns or "—",
+                Paragraph("Коммуникация", table_text_style),
+                Paragraph(f"{report.communication_score}/100", table_text_style),
+                Paragraph(report.communication_justification or "—", table_text_style),
+                Paragraph(report.communication_concerns or "—", table_text_style),
             ],
             [
-                "Культурное соответствие",
-                f"{report.cultural_fit_score}/100",
-                report.cultural_fit_justification or "—",
-                report.cultural_fit_concerns or "—",
+                Paragraph("Решение задач", table_text_style),
+                Paragraph(f"{report.problem_solving_score}/100", table_text_style),
+                Paragraph(report.problem_solving_justification or "—", table_text_style),
+                Paragraph(report.problem_solving_concerns or "—", table_text_style),
+            ],
+            [
+                Paragraph("Культурное соответствие", table_text_style),
+                Paragraph(f"{report.cultural_fit_score}/100", table_text_style),
+                Paragraph(report.cultural_fit_justification or "—", table_text_style),
+                Paragraph(report.cultural_fit_concerns or "—", table_text_style),
             ],
         ]
 
         criteria_table = Table(
-            criteria_data, colWidths=[2 * inch, 0.8 * inch, 2.2 * inch, 1.8 * inch]
+            criteria_data, colWidths=[1.5 * inch, 0.6 * inch, 2.8 * inch, 2.1 * inch]
         )
         criteria_table.setStyle(
             TableStyle(
                 [
                     ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#5E81AC")),
                     ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                    ("FONTSIZE", (0, 0), (-1, -1), 9),
-                    ("ALIGN", (1, 1), (1, -1), "CENTER"),
+                    ("ALIGN", (1, 1), (1, -1), "CENTER"),  # Центрирование баллов
+                    ("ALIGN", (0, 0), (-1, -1), "LEFT"),   # Остальное слева
                     ("GRID", (0, 0), (-1, -1), 1, colors.HexColor("#D8DEE9")),
                     ("VALIGN", (0, 0), (-1, -1), "TOP"),
                     ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
                     ("TOPPADDING", (0, 0), (-1, -1), 8),
                     ("LEFTPADDING", (0, 0), (-1, -1), 6),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8F9FA")]),
                 ]
             )
         )
@@ -282,7 +334,7 @@ class PDFReportService:
             if report.strengths:
                 story.append(Paragraph("Сильные стороны:", self.styles["SubHeader"]))
                 for strength in report.strengths:
-                    story.append(Paragraph(f"• {strength}", self.styles["BodyText"]))
+                    story.append(Paragraph(f"• {strength}", self.styles["CustomBodyText"]))
                 story.append(Spacer(1, 10))
 
             if report.weaknesses:
@@ -290,7 +342,7 @@ class PDFReportService:
                     Paragraph("Области для развития:", self.styles["SubHeader"])
                 )
                 for weakness in report.weaknesses:
-                    story.append(Paragraph(f"• {weakness}", self.styles["BodyText"]))
+                    story.append(Paragraph(f"• {weakness}", self.styles["CustomBodyText"]))
                 story.append(Spacer(1, 10))
 
         # Красные флаги
@@ -302,7 +354,7 @@ class PDFReportService:
                         f"⚠ {red_flag}",
                         ParagraphStyle(
                             name="RedFlag",
-                            parent=self.styles["BodyText"],
+                            parent=self.styles["CustomBodyText"],
                             textColor=colors.HexColor("#BF616A"),
                         ),
                     )
@@ -312,44 +364,8 @@ class PDFReportService:
         # Рекомендации и следующие шаги
         if report.next_steps:
             story.append(Paragraph("Рекомендации:", self.styles["SectionHeader"]))
-            story.append(Paragraph(report.next_steps, self.styles["BodyText"]))
+            story.append(Paragraph(report.next_steps, self.styles["CustomBodyText"]))
             story.append(Spacer(1, 15))
-
-        # Метрики интервью
-        if any(
-            [
-                report.interview_duration_minutes,
-                report.dialogue_messages_count,
-                report.questions_quality_score,
-            ]
-        ):
-            story.append(Paragraph("Метрики интервью", self.styles["SectionHeader"]))
-
-            metrics = []
-            if report.interview_duration_minutes:
-                metrics.append(
-                    ["Длительность:", f"{report.interview_duration_minutes} мин"]
-                )
-            if report.dialogue_messages_count:
-                metrics.append(
-                    ["Сообщений в диалоге:", str(report.dialogue_messages_count)]
-                )
-            if report.questions_quality_score:
-                metrics.append(
-                    ["Качество ответов:", f"{report.questions_quality_score:.1f}/10"]
-                )
-
-            metrics_table = Table(metrics, colWidths=[2 * inch, 2 * inch])
-            metrics_table.setStyle(
-                TableStyle(
-                    [
-                        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                        ("FONTSIZE", (0, 0), (-1, -1), 10),
-                        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-                    ]
-                )
-            )
-            story.append(metrics_table)
 
         # Подпись
         story.append(Spacer(1, 30))
@@ -362,6 +378,7 @@ class PDFReportService:
                     fontSize=8,
                     alignment=TA_CENTER,
                     textColor=colors.HexColor("#4C566A"),
+                    fontName="Arial-Unicode",
                 ),
             )
         )
@@ -374,10 +391,10 @@ class PDFReportService:
     def _format_recommendation(self, recommendation: RecommendationType) -> str:
         """Форматирует рекомендацию для отображения"""
         recommendation_map = {
-            RecommendationType.STRONGLY_RECOMMEND: "✅ Настоятельно рекомендуем",
-            RecommendationType.RECOMMEND: "👍 Рекомендуем",
-            RecommendationType.CONSIDER: "🤔 Рассмотреть кандидатуру",
-            RecommendationType.REJECT: "❌ Не рекомендуем",
+            RecommendationType.STRONGLY_RECOMMEND: "Настоятельно рекомендуем",
+            RecommendationType.RECOMMEND: "Рекомендуем",
+            RecommendationType.CONSIDER: "Рассмотреть кандидатуру",
+            RecommendationType.REJECT: "Не рекомендуем",
         }
         return recommendation_map.get(recommendation, str(recommendation))
 
@@ -408,11 +425,12 @@ class PDFReportService:
             safe_name = safe_name.replace(" ", "_")
             filename = f"interview_report_{safe_name}_{report.id}.pdf"
 
-            # Загружаем в S3
+            # Загружаем в S3 с публичным доступом
             file_url = await s3_service.upload_file(
                 file_content=pdf_bytes,
                 file_name=filename,
                 content_type="application/pdf",
+                public=True,
             )
 
             return file_url

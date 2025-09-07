@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 from app.core.database import get_session
 from app.repositories.resume_repository import ResumeRepository
+from app.services.pdf_report_service import pdf_report_service
 from celery_worker.interview_analysis_task import (
     analyze_multiple_candidates,
     generate_interview_report,
@@ -42,6 +43,16 @@ class CandidateRanking(BaseModel):
     overall_score: int
     recommendation: str
     position: str
+
+
+class PDFGenerationResponse(BaseModel):
+    """Ответ генерации PDF отчета"""
+
+    message: str
+    resume_id: int
+    candidate_name: str
+    pdf_url: str | None = None
+    status: str  # "generated", "exists", "failed"
 
 
 @router.post("/interview-report/{resume_id}", response_model=AnalysisResponse)
@@ -264,7 +275,7 @@ async def get_pdf_report(
         .where(InterviewSession.resume_id == resume_id)
     )
 
-    result = await session.exec(statement)
+    result = await session.execute(statement)
     report_session = result.first()
 
     if not report_session:
@@ -287,6 +298,105 @@ async def get_pdf_report(
 
     # Перенаправляем на S3 URL
     return RedirectResponse(url=report.pdf_report_url, status_code=302)
+
+
+@router.post("/generate-pdf/{resume_id}", response_model=PDFGenerationResponse)
+async def generate_pdf_report(
+    resume_id: int,
+    session=Depends(get_session),
+    resume_repo: ResumeRepository = Depends(ResumeRepository),
+):
+    """
+    Генерирует PDF отчет по интервью
+    
+    Проверяет наличие отчета в базе данных и генерирует PDF файл.
+    Если PDF уже существует, возвращает существующий URL.
+    """
+    from sqlmodel import select
+
+    from app.models.interview import InterviewSession
+    from app.models.interview_report import InterviewReport
+
+    # Проверяем, существует ли резюме
+    resume = await resume_repo.get_by_id(resume_id)
+    if not resume:
+        raise HTTPException(status_code=404, detail="Resume not found")
+
+    # Ищем отчет интервью
+    statement = (
+        select(InterviewReport, InterviewSession)
+        .join(
+            InterviewSession,
+            InterviewReport.interview_session_id == InterviewSession.id,
+        )
+        .where(InterviewSession.resume_id == resume_id)
+    )
+
+    result = await session.execute(statement)
+    report_session = result.first()
+
+    if not report_session:
+        raise HTTPException(
+            status_code=404,
+            detail="Interview report not found. Run analysis first using POST /analysis/interview-report/{resume_id}",
+        )
+
+    report, interview_session = report_session
+
+    # Если PDF уже существует, возвращаем его
+    if report.pdf_report_url:
+        return PDFGenerationResponse(
+            message="PDF report already exists",
+            resume_id=resume_id,
+            candidate_name=resume.applicant_name,
+            pdf_url=report.pdf_report_url,
+            status="exists",
+        )
+
+    # Генерируем PDF отчет
+    try:
+        # Получаем позицию из связанной вакансии
+        from app.models.vacancy import Vacancy
+        
+        vacancy_stmt = select(Vacancy).where(Vacancy.id == resume.vacancy_id)
+        vacancy_result = await session.execute(vacancy_stmt)
+        vacancy = vacancy_result.scalar_one_or_none()
+        
+        position = vacancy.title if vacancy else "Позиция не указана"
+        
+        # Генерируем и загружаем PDF
+        pdf_url = await pdf_report_service.generate_and_upload_pdf(
+            report, resume.applicant_name, position
+        )
+
+        if not pdf_url:
+            raise HTTPException(
+                status_code=500, detail="Failed to generate or upload PDF report"
+            )
+
+        # Обновляем отчет в БД
+        from sqlmodel import update
+
+        stmt = (
+            update(InterviewReport)
+            .where(InterviewReport.id == report.id)
+            .values(pdf_report_url=pdf_url)
+        )
+        await session.execute(stmt)
+        await session.commit()
+
+        return PDFGenerationResponse(
+            message="PDF report generated successfully",
+            resume_id=resume_id,
+            candidate_name=resume.applicant_name,
+            pdf_url=pdf_url,
+            status="generated",
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error generating PDF report: {str(e)}"
+        )
 
 
 @router.get("/report-data/{resume_id}")
@@ -318,7 +428,7 @@ async def get_report_data(
         .where(InterviewSession.resume_id == resume_id)
     )
 
-    result = await session.exec(statement)
+    result = await session.execute(statement)
     report_session = result.first()
 
     if not report_session:
@@ -326,10 +436,19 @@ async def get_report_data(
 
     report, interview_session = report_session
 
+    # Получаем позицию из связанной вакансии
+    from app.models.vacancy import Vacancy
+    
+    vacancy_stmt = select(Vacancy).where(Vacancy.id == resume.vacancy_id)
+    vacancy_result = await session.execute(vacancy_stmt)
+    vacancy = vacancy_result.scalar_one_or_none()
+    
+    position = vacancy.title if vacancy else "Позиция не указана"
+
     return {
         "report_id": report.id,
         "candidate_name": resume.applicant_name,
-        "position": "Unknown Position",  # Можно расширить через vacancy
+        "position": position,
         "interview_date": report.created_at.isoformat(),
         "overall_score": report.overall_score,
         "recommendation": report.recommendation.value,
