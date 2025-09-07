@@ -14,6 +14,11 @@ class VacancyRepository(BaseRepository[Vacancy]):
     def __init__(self, session: Annotated[AsyncSession, Depends(get_session)]):
         super().__init__(Vacancy, session)
 
+    async def get_by_id(self, vacancy_id: int) -> Vacancy | None:
+        statement = select(Vacancy).where(Vacancy.id == vacancy_id)
+        result = await self._session.execute(statement)
+        return result.scalar_one_or_none()
+
     async def get_by_company(self, company_name: str) -> list[Vacancy]:
         statement = select(Vacancy).where(Vacancy.company_name == company_name)
         result = await self._session.execute(statement)

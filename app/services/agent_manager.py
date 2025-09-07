@@ -42,6 +42,7 @@ class AgentManager:
             self.api_secret = (
                 settings.livekit_api_secret or "devkey_secret_32chars_minimum_length"
             )
+            self._monitoring_task = None
 
     async def start_agent(self) -> bool:
         """Запускает AI агента в режиме ожидания (без конкретной сессии)"""
@@ -95,6 +96,11 @@ class AgentManager:
                 )
 
                 logger.info(f"AI Agent started with PID {process.pid}")
+                
+                # Запускаем мониторинг команд
+                if not self._monitoring_task:
+                    self._monitoring_task = asyncio.create_task(self._monitor_commands())
+                
                 return True
 
             except Exception as e:
@@ -126,6 +132,12 @@ class AgentManager:
 
                 logger.info(f"AI Agent with PID {self._agent_process.pid} stopped")
                 self._agent_process = None
+                
+                # Останавливаем мониторинг команд
+                if self._monitoring_task:
+                    self._monitoring_task.cancel()
+                    self._monitoring_task = None
+                
                 return True
 
             except Exception as e:
@@ -134,7 +146,11 @@ class AgentManager:
                 return False
 
     async def assign_session(
-        self, session_id: int, room_name: str, interview_plan: dict, vacancy_data: dict = None
+        self,
+        session_id: int,
+        room_name: str,
+        interview_plan: dict,
+        vacancy_data: dict = None,
     ) -> bool:
         """Назначает агенту конкретную сессию интервью"""
         async with self._lock:
@@ -159,11 +175,11 @@ class AgentManager:
                     "interview_plan": interview_plan,
                     "command": "start_interview",
                 }
-                
+
                 # Добавляем данные вакансии если они переданы
                 if vacancy_data:
                     metadata["vacancy_data"] = vacancy_data
-                    
+
                 with open(metadata_file, "w", encoding="utf-8") as f:
                     json.dump(metadata, f, ensure_ascii=False, indent=2)
 
@@ -239,6 +255,39 @@ class AgentManager:
                 logger.error(f"Error releasing agent session: {e}")
                 return False
 
+    async def handle_session_completed(self, session_id: int, room_name: str) -> bool:
+        """Обрабатывает сигнал о завершении сессии от агента"""
+        async with self._lock:
+            if not self._agent_process:
+                logger.warning(f"No agent process to handle session_completed for {session_id}")
+                return False
+
+            if self._agent_process.session_id != session_id:
+                logger.warning(
+                    f"Session mismatch: expected {self._agent_process.session_id}, got {session_id}"
+                )
+                return False
+
+            try:
+                # Очищаем файлы метаданных
+                try:
+                    os.remove(f"session_metadata_{session_id}.json")
+                except FileNotFoundError:
+                    pass
+
+                # Возвращаем агента в режим ожидания
+                old_session_id = self._agent_process.session_id
+                self._agent_process.session_id = None
+                self._agent_process.room_name = None
+                self._agent_process.status = "idle"
+
+                logger.info(f"Agent automatically released from session {old_session_id}")
+                return True
+
+            except Exception as e:
+                logger.error(f"Error handling session_completed: {e}")
+                return False
+
     def get_status(self) -> dict:
         """Возвращает текущий статус агента"""
         if not self._agent_process:
@@ -292,6 +341,45 @@ class AgentManager:
             return False
         except Exception:
             return False
+
+    async def _monitor_commands(self):
+        """Мониторит файл команд для обработки сигналов от агента"""
+        command_file = "agent_commands.json"
+        last_processed_timestamp = None
+        
+        logger.info("[MONITOR] Starting command monitoring")
+        
+        try:
+            while True:
+                try:
+                    if os.path.exists(command_file):
+                        with open(command_file, "r", encoding="utf-8") as f:
+                            command = json.load(f)
+                        
+                        # Проверяем timestamp чтобы избежать повторной обработки
+                        command_timestamp = command.get("timestamp")
+                        if command_timestamp and command_timestamp != last_processed_timestamp:
+                            action = command.get("action")
+                            
+                            if action == "session_completed":
+                                session_id = command.get("session_id")
+                                room_name = command.get("room_name")
+                                
+                                logger.info(f"[MONITOR] Processing session_completed for {session_id}")
+                                await self.handle_session_completed(session_id, room_name)
+                                
+                                last_processed_timestamp = command_timestamp
+                    
+                    await asyncio.sleep(2)  # Проверяем каждые 2 секунды
+                    
+                except Exception as e:
+                    logger.error(f"[MONITOR] Error processing command: {e}")
+                    await asyncio.sleep(5)  # Больший интервал при ошибке
+                    
+        except asyncio.CancelledError:
+            logger.info("[MONITOR] Command monitoring stopped")
+        except Exception as e:
+            logger.error(f"[MONITOR] Command monitoring failed: {e}")
 
 
 # Глобальный экземпляр менеджера

@@ -1,6 +1,8 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
+from app.core.database import get_session
 from app.repositories.resume_repository import ResumeRepository
 from celery_worker.interview_analysis_task import (
     analyze_multiple_candidates,
@@ -226,5 +228,152 @@ async def get_analysis_statistics(
             "analysis_completion": round((with_reports / max(interviewed, 1)) * 100, 1)
             if interviewed > 0
             else 0,
+        },
+    }
+
+
+@router.get("/pdf-report/{resume_id}")
+async def get_pdf_report(
+    resume_id: int,
+    session=Depends(get_session),
+    resume_repo: ResumeRepository = Depends(ResumeRepository),
+):
+    """
+    Получить PDF отчет по интервью
+
+    Если отчет готов - перенаправляет на S3 URL
+    Если отчета нет - возвращает информацию о статусе
+    """
+    from sqlmodel import select
+
+    from app.models.interview import InterviewSession
+    from app.models.interview_report import InterviewReport
+
+    # Проверяем, существует ли резюме
+    resume = await resume_repo.get_by_id(resume_id)
+    if not resume:
+        raise HTTPException(status_code=404, detail="Resume not found")
+
+    # Ищем сессию интервью и отчет
+    statement = (
+        select(InterviewReport, InterviewSession)
+        .join(
+            InterviewSession,
+            InterviewReport.interview_session_id == InterviewSession.id,
+        )
+        .where(InterviewSession.resume_id == resume_id)
+    )
+
+    result = await session.exec(statement)
+    report_session = result.first()
+
+    if not report_session:
+        # Если отчета нет - возможно, нужно запустить анализ
+        raise HTTPException(
+            status_code=404,
+            detail="Interview report not found. Run analysis first using POST /analysis/interview-report/{resume_id}",
+        )
+
+    report, interview_session = report_session
+
+    if not report.pdf_report_url:
+        # PDF еще не сгенерирован
+        return {
+            "status": "pdf_not_ready",
+            "message": "PDF report is being generated or failed to generate",
+            "report_id": report.id,
+            "candidate_name": resume.applicant_name,
+        }
+
+    # Перенаправляем на S3 URL
+    return RedirectResponse(url=report.pdf_report_url, status_code=302)
+
+
+@router.get("/report-data/{resume_id}")
+async def get_report_data(
+    resume_id: int,
+    session=Depends(get_session),
+    resume_repo: ResumeRepository = Depends(ResumeRepository),
+):
+    """
+    Получить данные отчета в JSON формате (без PDF)
+    """
+    from sqlmodel import select
+
+    from app.models.interview import InterviewSession
+    from app.models.interview_report import InterviewReport
+
+    # Проверяем, существует ли резюме
+    resume = await resume_repo.get_by_id(resume_id)
+    if not resume:
+        raise HTTPException(status_code=404, detail="Resume not found")
+
+    # Ищем отчет
+    statement = (
+        select(InterviewReport, InterviewSession)
+        .join(
+            InterviewSession,
+            InterviewReport.interview_session_id == InterviewSession.id,
+        )
+        .where(InterviewSession.resume_id == resume_id)
+    )
+
+    result = await session.exec(statement)
+    report_session = result.first()
+
+    if not report_session:
+        raise HTTPException(status_code=404, detail="Interview report not found")
+
+    report, interview_session = report_session
+
+    return {
+        "report_id": report.id,
+        "candidate_name": resume.applicant_name,
+        "position": "Unknown Position",  # Можно расширить через vacancy
+        "interview_date": report.created_at.isoformat(),
+        "overall_score": report.overall_score,
+        "recommendation": report.recommendation.value,
+        "scores": {
+            "technical_skills": {
+                "score": report.technical_skills_score,
+                "justification": report.technical_skills_justification,
+                "concerns": report.technical_skills_concerns,
+            },
+            "experience_relevance": {
+                "score": report.experience_relevance_score,
+                "justification": report.experience_relevance_justification,
+                "concerns": report.experience_relevance_concerns,
+            },
+            "communication": {
+                "score": report.communication_score,
+                "justification": report.communication_justification,
+                "concerns": report.communication_concerns,
+            },
+            "problem_solving": {
+                "score": report.problem_solving_score,
+                "justification": report.problem_solving_justification,
+                "concerns": report.problem_solving_concerns,
+            },
+            "cultural_fit": {
+                "score": report.cultural_fit_score,
+                "justification": report.cultural_fit_justification,
+                "concerns": report.cultural_fit_concerns,
+            },
+        },
+        "strengths": report.strengths,
+        "weaknesses": report.weaknesses,
+        "red_flags": report.red_flags,
+        "next_steps": report.next_steps,
+        "metrics": {
+            "interview_duration_minutes": report.interview_duration_minutes,
+            "dialogue_messages_count": report.dialogue_messages_count,
+            "questions_quality_score": report.questions_quality_score,
+        },
+        "pdf_available": bool(report.pdf_report_url),
+        "pdf_url": report.pdf_report_url,
+        "analysis_metadata": {
+            "method": report.analysis_method,
+            "model_used": report.llm_model_used,
+            "analysis_duration": report.analysis_duration_seconds,
         },
     }

@@ -57,7 +57,9 @@ class MilvusVectorStore:
             return True
 
         except Exception as e:
-            raise Exception(f"Ошибка при добавлении кандидата в Milvus: {str(e)}") from e
+            raise Exception(
+                f"Ошибка при добавлении кандидата в Milvus: {str(e)}"
+            ) from e
 
     def search_similar_candidates(self, query: str, k: int = 5) -> list[dict[str, Any]]:
         """Поиск похожих кандидатов по запросу"""
@@ -92,7 +94,9 @@ class MilvusVectorStore:
                 return None
 
         except Exception as e:
-            raise Exception(f"Ошибка при получении кандидата из Milvus: {str(e)}") from e
+            raise Exception(
+                f"Ошибка при получении кандидата из Milvus: {str(e)}"
+            ) from e
 
     def delete_candidate(self, candidate_id: str):
         """Удаляет кандидата из векторной базы"""

@@ -29,6 +29,8 @@ dependencies = [
     "livekit-agents[cartesia,deepgram,openai,silero,resemble,turn-detector]~=1.2",
     "textract>=1.5.0",
     "comtypes>=1.4.12",
+    "reportlab>=4.4.3",
+    "yandex-speechkit>=1.5.0",
 ]
 
 [build-system]

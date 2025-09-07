@@ -3,7 +3,7 @@ import json
 import logging
 import os
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 
 # Принудительно устанавливаем UTF-8 для Windows
 if os.name == "nt":  # Windows
@@ -404,10 +404,10 @@ async def entrypoint(ctx: JobContext):
 
     # STT
     stt = (
-        deepgram.STT(
-            model="nova-2-general", language="ru", api_key=settings.deepgram_api_key
+        openai.STT(
+            model="whisper-1", language="ru", api_key=settings.openai_api_key
         )
-        if settings.deepgram_api_key
+        if settings.openai_api_key
         else openai.STT(
             model="whisper-1", language="ru", api_key=settings.openai_api_key
         )
@@ -415,18 +415,16 @@ async def entrypoint(ctx: JobContext):
 
     # LLM
     llm = openai.LLM(
-        model="gpt-4o", api_key=settings.openai_api_key, temperature=0.7
+        model="gpt-5-mini", api_key=settings.openai_api_key
     )
 
     # TTS
     tts = (
-        cartesia.TTS(
-            model="sonic-turbo",
-            language="ru",
-            voice="da05e96d-ca10-4220-9042-d8acef654fa9",
-            api_key=settings.cartesia_api_key,
+        openai.TTS(
+            model="gpt-4o-mini-tts",
+            api_key=settings.openai_api_key,
         )
-        if settings.cartesia_api_key
+        if settings.openai_api_key
         else silero.TTS(language="ru", model="v4_ru")
     )
 
@@ -664,6 +662,27 @@ async def entrypoint(ctx: JobContext):
             logger.info(
                 "[SEQUENCE] Step 2: Room closure failed, but continuing sequence"
             )
+        # Шаг 3: освобождаем агента через файл команд
+        logger.info("[SEQUENCE] Step 3: Releasing agent session")
+        try:
+            # Сигнализируем менеджеру агентов о завершении сессии
+            command_file = "agent_commands.json"
+            release_command = {
+                "action": "session_completed",
+                "session_id": session_id,
+                "room_name": room_name,
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+            
+            with open(command_file, "w", encoding="utf-8") as f:
+                json.dump(release_command, f, ensure_ascii=False, indent=2)
+                
+            logger.info(f"[SEQUENCE] Step 3: Session {session_id} release signal sent")
+            
+        except Exception as e:
+            logger.error(f"[SEQUENCE] Step 3: Failed to send release signal: {str(e)}")
+            logger.info("[SEQUENCE] Step 3: Continuing without release signal")
+
 
     
     # --- Упрощенная логика обработки пользовательского ответа ---

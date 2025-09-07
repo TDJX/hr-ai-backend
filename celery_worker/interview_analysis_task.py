@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from datetime import datetime
@@ -51,12 +52,18 @@ def generate_interview_report(resume_id: int):
 
             # Получаем историю интервью
             interview_session = _get_interview_session(db, resume_id)
-            logger.info(f"[INTERVIEW_ANALYSIS] Found interview_session: {interview_session is not None}")
-            
+            logger.info(
+                f"[INTERVIEW_ANALYSIS] Found interview_session: {interview_session is not None}"
+            )
+
             if interview_session:
-                logger.info(f"[INTERVIEW_ANALYSIS] Session ID: {interview_session.id}, dialogue_history length: {len(interview_session.dialogue_history) if interview_session.dialogue_history else 0}")
+                logger.info(
+                    f"[INTERVIEW_ANALYSIS] Session ID: {interview_session.id}, dialogue_history length: {len(interview_session.dialogue_history) if interview_session.dialogue_history else 0}"
+                )
             else:
-                logger.warning(f"[INTERVIEW_ANALYSIS] No interview session found for resume_id: {resume_id}")
+                logger.warning(
+                    f"[INTERVIEW_ANALYSIS] No interview session found for resume_id: {resume_id}"
+                )
 
             # Парсим JSON данные
             parsed_resume = _parse_json_field(resume.parsed_data)
@@ -68,13 +75,17 @@ def generate_interview_report(resume_id: int):
                     dialogue_history = interview_session.dialogue_history
                 elif isinstance(interview_session.dialogue_history, str):
                     try:
-                        dialogue_history = json.loads(interview_session.dialogue_history)
+                        dialogue_history = json.loads(
+                            interview_session.dialogue_history
+                        )
                         if not isinstance(dialogue_history, list):
                             dialogue_history = []
                     except (json.JSONDecodeError, TypeError):
                         dialogue_history = []
-            
-            logger.info(f"[INTERVIEW_ANALYSIS] Parsed dialogue_history length: {len(dialogue_history)}")
+
+            logger.info(
+                f"[INTERVIEW_ANALYSIS] Parsed dialogue_history length: {len(dialogue_history)}"
+            )
 
             # Генерируем отчет
             report = _generate_comprehensive_report(
@@ -87,7 +98,18 @@ def generate_interview_report(resume_id: int):
             )
 
             # Сохраняем отчет в БД
-            _save_report_to_db(db, resume_id, report)
+            report_instance = _save_report_to_db(db, resume_id, report)
+
+            # Генерируем и загружаем PDF отчет
+            if report_instance:
+                asyncio.run(
+                    _generate_and_upload_pdf_report(
+                        db,
+                        report_instance,
+                        resume.applicant_name,
+                        vacancy.get("title", "Unknown Position"),
+                    )
+                )
 
             logger.info(
                 f"[INTERVIEW_ANALYSIS] Analysis completed for resume_id: {resume_id}, score: {report['overall_score']}"
@@ -155,25 +177,33 @@ def _get_interview_session(db, resume_id: int):
     try:
         from app.models.interview import InterviewSession
 
-        logger.info(f"[GET_SESSION] Looking for interview session with resume_id: {resume_id}")
-        
+        logger.info(
+            f"[GET_SESSION] Looking for interview session with resume_id: {resume_id}"
+        )
+
         session = (
             db.query(InterviewSession)
             .filter(InterviewSession.resume_id == resume_id)
             .first()
         )
-        
+
         if session:
-            logger.info(f"[GET_SESSION] Found session {session.id} for resume {resume_id}")
+            logger.info(
+                f"[GET_SESSION] Found session {session.id} for resume {resume_id}"
+            )
             logger.info(f"[GET_SESSION] Session status: {session.status}")
-            logger.info(f"[GET_SESSION] Dialogue history type: {type(session.dialogue_history)}")
+            logger.info(
+                f"[GET_SESSION] Dialogue history type: {type(session.dialogue_history)}"
+            )
             if session.dialogue_history:
-                logger.info(f"[GET_SESSION] Raw dialogue_history preview: {str(session.dialogue_history)[:200]}...")
+                logger.info(
+                    f"[GET_SESSION] Raw dialogue_history preview: {str(session.dialogue_history)[:200]}..."
+                )
         else:
             logger.warning(f"[GET_SESSION] No session found for resume_id: {resume_id}")
-            
+
         return session
-        
+
     except Exception as e:
         logger.error(f"Error getting interview session: {e}")
         return None
@@ -497,7 +527,11 @@ def _calculate_experience_score(parsed_resume: dict, vacancy: dict) -> int:
 
 
 def _save_report_to_db(db, resume_id: int, report: dict):
-    """Сохраняет отчет в базу данных в таблицу interview_reports"""
+    """Сохраняет отчет в базу данных в таблицу interview_reports
+
+    Returns:
+        InterviewReport | None: Созданный или обновленный экземпляр отчета
+    """
 
     try:
         from app.models.interview import InterviewSession
@@ -514,7 +548,7 @@ def _save_report_to_db(db, resume_id: int, report: dict):
             logger.warning(
                 f"[INTERVIEW_ANALYSIS] No interview session found for resume_id: {resume_id}"
             )
-            return
+            return None
 
         # Проверяем, есть ли уже отчет для этой сессии
         existing_report = (
@@ -531,6 +565,9 @@ def _save_report_to_db(db, resume_id: int, report: dict):
             _update_report_from_dict(existing_report, report)
             existing_report.updated_at = datetime.utcnow()
             db.add(existing_report)
+            db.commit()
+            db.refresh(existing_report)
+            return existing_report
         else:
             logger.info(
                 f"[INTERVIEW_ANALYSIS] Creating new report for session: {interview_session.id}"
@@ -538,13 +575,46 @@ def _save_report_to_db(db, resume_id: int, report: dict):
             # Создаем новый отчет
             new_report = _create_report_from_dict(interview_session.id, report)
             db.add(new_report)
-
-        logger.info(
-            f"[INTERVIEW_ANALYSIS] Report saved for resume_id: {resume_id}, session: {interview_session.id}"
-        )
+            db.commit()
+            db.refresh(new_report)
+            return new_report
 
     except Exception as e:
         logger.error(f"[INTERVIEW_ANALYSIS] Error saving report: {str(e)}")
+        return None
+
+
+async def _generate_and_upload_pdf_report(
+    db, report_instance: "InterviewReport", candidate_name: str, position: str
+):
+    """Генерирует PDF отчет и загружает его в S3"""
+    try:
+        from app.services.pdf_report_service import pdf_report_service
+
+        logger.info(
+            f"[PDF_GENERATION] Starting PDF generation for report ID: {report_instance.id}"
+        )
+
+        # Генерируем и загружаем PDF
+        pdf_url = await pdf_report_service.generate_and_upload_pdf(
+            report=report_instance, candidate_name=candidate_name, position=position
+        )
+
+        if pdf_url:
+            # Сохраняем URL в базу данных
+            report_instance.pdf_report_url = pdf_url
+            db.add(report_instance)
+            db.commit()
+            logger.info(
+                f"[PDF_GENERATION] PDF generated and uploaded successfully: {pdf_url}"
+            )
+        else:
+            logger.error(
+                f"[PDF_GENERATION] Failed to generate or upload PDF for report ID: {report_instance.id}"
+            )
+
+    except Exception as e:
+        logger.error(f"[PDF_GENERATION] Error generating PDF report: {str(e)}")
 
 
 def _create_report_from_dict(

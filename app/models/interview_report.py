@@ -77,6 +77,9 @@ class InterviewReportBase(SQLModel):
     llm_model_used: str | None = Field(default=None, max_length=100)
     analysis_duration_seconds: int | None = Field(default=None, ge=0)
 
+    # PDF отчет
+    pdf_report_url: str | None = Field(default=None, max_length=500)
+
 
 class InterviewReport(InterviewReportBase, table=True):
     """Полный отчет по интервью с ID и временными метками"""
@@ -137,6 +140,7 @@ class InterviewReportCreate(SQLModel):
     analysis_method: str | None = "openai_gpt4"
     llm_model_used: str | None = None
     analysis_duration_seconds: int | None = None
+    pdf_report_url: str | None = None
 
 
 class InterviewReportUpdate(SQLModel):
@@ -181,6 +185,7 @@ class InterviewReportUpdate(SQLModel):
     analysis_method: str | None = None
     llm_model_used: str | None = None
     analysis_duration_seconds: int | None = None
+    pdf_report_url: str | None = None
 
 
 class InterviewReportRead(InterviewReportBase):

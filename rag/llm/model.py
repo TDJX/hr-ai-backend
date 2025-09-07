@@ -108,25 +108,29 @@ class ResumeParser:
         try:
             # Метод 1: COM автоматизация Word (самый надежный для Windows)
             import os
-            if os.name == 'nt':  # Windows
+
+            if os.name == "nt":  # Windows
                 try:
                     import comtypes.client
+
                     print(f"[DEBUG] Trying Word COM automation for {file_path}")
-                    
-                    word = comtypes.client.CreateObject('Word.Application')
+
+                    word = comtypes.client.CreateObject("Word.Application")
                     word.Visible = False
-                    
+
                     doc = word.Documents.Open(file_path)
                     text = doc.Content.Text
                     doc.Close()
                     word.Quit()
-                    
+
                     if text and text.strip():
-                        print(f"[DEBUG] Word COM successfully extracted {len(text)} characters")
+                        print(
+                            f"[DEBUG] Word COM successfully extracted {len(text)} characters"
+                        )
                         return text.strip()
                 except Exception as e:
                     print(f"[DEBUG] Word COM failed: {e}")
-            
+
             # Метод 2: Для .doc файлов используем python-docx
             if Document:
                 try:
@@ -140,10 +144,13 @@ class ResumeParser:
             # Попытка использовать textract (универсальная библиотека для извлечения текста)
             try:
                 import textract
+
                 print(f"[DEBUG] Using textract to process {file_path}")
-                text = textract.process(file_path).decode('utf-8')
+                text = textract.process(file_path).decode("utf-8")
                 if text and text.strip():
-                    print(f"[DEBUG] textract successfully extracted {len(text)} characters")
+                    print(
+                        f"[DEBUG] textract successfully extracted {len(text)} characters"
+                    )
                     return text.strip()
                 else:
                     print("[DEBUG] textract returned empty text")
@@ -151,10 +158,11 @@ class ResumeParser:
                 print(f"[DEBUG] textract not available: {e}")
             except Exception as e:
                 print(f"[DEBUG] textract failed: {e}")
-            
+
             # Попытка использовать docx2txt
             try:
                 import docx2txt
+
                 text = docx2txt.process(file_path)
                 if text:
                     return text.strip()
@@ -162,12 +170,12 @@ class ResumeParser:
                 pass
             except Exception:
                 pass
-            
+
             # Попытка использовать oletools для старых DOC файлов
             try:
-                from oletools.olevba import VBA_Parser
                 from oletools import olefile
-                
+                from oletools.olevba import VBA_Parser
+
                 if olefile.isOleFile(file_path):
                     # Это старый формат DOC, пытаемся извлечь текст
                     # Пока что возвращаем информативную ошибку

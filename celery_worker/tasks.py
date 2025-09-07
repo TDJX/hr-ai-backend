@@ -3,7 +3,11 @@ import os
 from typing import Any
 
 from celery_worker.celery_app import celery_app
-from celery_worker.database import SyncResumeRepository, SyncVacancyRepository, get_sync_session
+from celery_worker.database import (
+    SyncResumeRepository,
+    SyncVacancyRepository,
+    get_sync_session,
+)
 from rag.llm.model import ResumeParser
 from rag.registry import registry
 
@@ -19,19 +23,22 @@ def generate_interview_plan(
         with get_sync_session() as session:
             resume_repo = SyncResumeRepository(session)
             vacancy_repo = SyncVacancyRepository(session)
-            
+
             resume_record = resume_repo.get_by_id(resume_id)
             if not resume_record:
-                return {"is_suitable": False, "rejection_reason": "Резюме не найдено в БД"}
+                return {
+                    "is_suitable": False,
+                    "rejection_reason": "Резюме не найдено в БД",
+                }
 
             # Получаем данные вакансии
             vacancy_record = None
             if resume_record.vacancy_id:
                 vacancy_record = vacancy_repo.get_by_id(resume_record.vacancy_id)
-            
+
             if not vacancy_record:
                 return {"is_suitable": False, "rejection_reason": "Вакансия не найдена"}
-            
+
             vacancy_data = {
                 "title": vacancy_record.title,
                 "description": vacancy_record.description,
@@ -43,17 +50,17 @@ def generate_interview_plan(
 
         # Сначала проверяем соответствие резюме и вакансии через LLM
         chat_model = registry.get_chat_model()
-        
+
         # Формируем опыт кандидата
         experience_map = {
             "noExperience": "Без опыта",
             "between1And3": "1-3 года",
             "between3And6": "3-6 лет",
-            "moreThan6": "Более 6 лет"
+            "moreThan6": "Более 6 лет",
         }
-        
+
         compatibility_prompt = f"""
-        Проанализируй (не строго!) соответствие кандидата вакансии и определи, стоит ли проводить интервью.
+        Проанализируй соответствие кандидата вакансии и определи, стоит ли проводить интервью.
         
         КЛЮЧЕВОЙ И ЕДИНСТВЕННЫй КРИТЕРИЙ ОТКЛОНЕНИЯ:
         1. Профессиональная область кандидата: Полное несоответствие сферы деятельности вакансии (иначе 100 за критерий)
@@ -63,6 +70,7 @@ def generate_interview_plan(
         3. Учитывай опыт с аналогичными, похожими, смежными технологиями
         4. Когда смотришь на вакансию и кандидата не учитывай строгие слова, такие как "Требования", "Ключевые" и тп. Это лишь маркеры, 
         но не оценочные указатели
+        5. Если есть спорные вопросы соответствия, лучше допустить к собеседованию и уточнить их там
         
         КАНДИДАТ: 
         - Имя: {combined_data.get("name", "Не указано")}
@@ -86,19 +94,19 @@ def generate_interview_plan(
             "rejection_reason": "Конкретная подробная причина отклонения с цитированием (если is_suitable=false)",
         }}
         """
-        
+
         from langchain.schema import HumanMessage, SystemMessage
-        
+
         compatibility_messages = [
             SystemMessage(
                 content="Ты эксперт по подбору персонала. Анализируй соответствие кандидатов вакансиям строго и объективно."
             ),
             HumanMessage(content=compatibility_prompt),
         ]
-        
+
         compatibility_response = chat_model.get_llm().invoke(compatibility_messages)
         compatibility_text = compatibility_response.content.strip()
-        
+
         # Парсим ответ о соответствии
         compatibility_result = None
         if compatibility_text.startswith("{") and compatibility_text.endswith("}"):
@@ -111,13 +119,19 @@ def generate_interview_plan(
                 compatibility_result = json.loads(compatibility_text[start:end])
 
         # Если кандидат не подходит - возвращаем результат отклонения
-        if not compatibility_result or not compatibility_result.get("is_suitable", True):
+        if not compatibility_result or not compatibility_result.get(
+            "is_suitable", True
+        ):
             return {
                 "is_suitable": False,
-                "rejection_reason": compatibility_result.get("rejection_reason", "Кандидат не соответствует требованиям вакансии") if compatibility_result else "Ошибка анализа соответствия",
-                "match_details": compatibility_result
+                "rejection_reason": compatibility_result.get(
+                    "rejection_reason", "Кандидат не соответствует требованиям вакансии"
+                )
+                if compatibility_result
+                else "Ошибка анализа соответствия",
+                "match_details": compatibility_result,
             }
-        
+
         # Если кандидат подходит - генерируем план интервью
         plan_prompt = f"""
         Создай детальный план интервью для кандидата на основе его резюме и требований вакансии.
@@ -201,11 +215,11 @@ def generate_interview_plan(
             interview_plan["is_suitable"] = True
             interview_plan["match_details"] = compatibility_result
             return interview_plan
-            
+
         return {
             "is_suitable": True,
             "match_details": compatibility_result,
-            "error": "Не удалось сгенерировать план интервью"
+            "error": "Не удалось сгенерировать план интервью",
         }
 
     except Exception as e:
@@ -313,7 +327,7 @@ def parse_resume_task(self, resume_id: str, file_path: str):
 
         with get_sync_session() as session:
             repo = SyncResumeRepository(session)
-            
+
             # Проверяем результат генерации плана интервью
             print("interview_plan", interview_plan)
             if interview_plan and interview_plan.get("is_suitable", True):
@@ -323,14 +337,20 @@ def parse_resume_task(self, resume_id: str, file_path: str):
                 repo.update_interview_plan(int(resume_id), interview_plan)
             else:
                 # Кандидат не подходит - отклоняем
-                rejection_reason = interview_plan.get("rejection_reason", "Не соответствует требованиям вакансии") if interview_plan else "Ошибка анализа соответствия"
-                repo.update_status(
-                    int(resume_id), 
-                    "rejected", 
-                    parsed_data=combined_data,
-                    rejection_reason=rejection_reason
+                rejection_reason = (
+                    interview_plan.get(
+                        "rejection_reason", "Не соответствует требованиям вакансии"
+                    )
+                    if interview_plan
+                    else "Ошибка анализа соответствия"
                 )
-                
+                repo.update_status(
+                    int(resume_id),
+                    "rejected",
+                    parsed_data=combined_data,
+                    rejection_reason=rejection_reason,
+                )
+
                 # Завершаем с информацией об отклонении
                 self.update_state(
                     state="SUCCESS",
@@ -339,15 +359,15 @@ def parse_resume_task(self, resume_id: str, file_path: str):
                         "progress": 100,
                         "result": combined_data,
                         "rejected": True,
-                        "rejection_reason": rejection_reason
+                        "rejection_reason": rejection_reason,
                     },
                 )
-                
+
                 return {
                     "resume_id": resume_id,
                     "status": "rejected",
                     "parsed_data": combined_data,
-                    "rejection_reason": rejection_reason
+                    "rejection_reason": rejection_reason,
                 }
 
         # Завершено успешно

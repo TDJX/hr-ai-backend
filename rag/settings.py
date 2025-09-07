@@ -24,7 +24,7 @@ class RagSettings(BaseSettings):
     # LLM Settings
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
-    openai_model: str = "gpt-4o-mini"
+    openai_model: str = "gpt-5-mini"
     openai_embeddings_model: str = "text-embedding-3-small"
 
     # AI Agent Settings

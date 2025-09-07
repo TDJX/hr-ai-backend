@@ -135,7 +135,7 @@ class InterviewRoomService:
 
                 # Получаем готовый план интервью для AI агента
                 interview_plan = await self.get_resume_data_for_interview(resume_id)
-                
+
                 # Получаем данные вакансии
                 resume = await self.resume_repo.get(resume_id)
                 vacancy_data = None
@@ -162,7 +162,10 @@ class InterviewRoomService:
 
                 # Назначаем сессию агенту через менеджер
                 success = await agent_manager.assign_session(
-                    interview_session.id, interview_session.room_name, interview_plan, vacancy_data
+                    interview_session.id,
+                    interview_session.room_name,
+                    interview_plan,
+                    vacancy_data,
                 )
 
                 if not success:
