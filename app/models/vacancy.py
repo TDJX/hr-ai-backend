@@ -38,15 +38,15 @@ class VacancyBase(SQLModel):
     salary_to: int | None = None
     salary_currency: str | None = Field(default="RUR", max_length=3)
     gross_salary: bool | None = False
-    company_name: str = Field(max_length=255)
+    company_name: str | None = Field(default=None, max_length=255)
     company_description: str | None = None
-    area_name: str = Field(max_length=255)
+    area_name: str | None = Field(default=None, max_length=255)
     metro_stations: str | None = None
     address: str | None = None
     professional_roles: str | None = None
-    contacts_name: str | None = Field(max_length=255)
-    contacts_email: str | None = Field(max_length=255)
-    contacts_phone: str | None = Field(max_length=50)
+    contacts_name: str | None = Field(default=None, max_length=255)
+    contacts_email: str | None = Field(default=None, max_length=255)
+    contacts_phone: str | None = Field(default=None, max_length=50)
     is_archived: bool = Field(default=False)
     premium: bool = Field(default=False)
     published_at: datetime | None = Field(default_factory=datetime.utcnow)

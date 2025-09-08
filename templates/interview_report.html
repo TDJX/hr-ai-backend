@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Отчет по собеседованию {{ position }} | Анализ кандидата {{ candidate_name }} | HR Система</title>
+  <meta name="description" content="Детальный отчет по собеседованию {{ position }} кандидата {{ candidate_name }} с оценкой технических навыков, опыта и рекомендациями по найму">
+  <meta name="keywords" content="отчет собеседование, оценка кандидата, hr система">
+  
+  <style>
+    /* Reset and base styles */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #ffffff;
+      color: #05000c;
+      line-height: 1.5;
+      padding: 16px;
+    }
+    
+    /* Layout components */
+    .main-container {
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+      justify-content: flex-start;
+      align-items: center;
+      width: 100%;
+      margin: 0 auto;
+    }
+    
+    .content-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 64px;
+      justify-content: flex-start;
+      align-items: center;
+      width: 100%;
+    }
+    
+    .header-section {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      justify-content: flex-start;
+      align-items: flex-start;
+      width: 100%;
+    }
+    
+    .info-analysis-row {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      justify-content: flex-start;
+      align-items: flex-start;
+      width: 100%;
+    }
+    
+    .basic-info-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      justify-content: flex-start;
+      align-items: center;
+      width: 100%;
+    }
+    
+    .analysis-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      justify-content: flex-start;
+      align-items: center;
+      width: 100%;
+    }
+    
+    .info-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+    }
+    
+    .info-labels {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      justify-content: flex-start;
+      align-items: flex-start;
+      width: 100%;
+    }
+    
+    .info-values {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      justify-content: flex-start;
+      align-items: flex-start;
+      width: 100%;
+    }
+    
+    .analysis-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      justify-content: flex-start;
+      align-items: flex-start;
+      width: 100%;
+    }
+    
+    .analysis-labels {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      align-items: left;
+      width: 100%;
+    }
+    
+    .analysis-content {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      justify-content: flex-start;
+      align-items: left;
+      width: 100%;
+    }
+    
+    /* Typography */
+    .report-title {
+      font-size: 16px;
+      font-family: Arial, sans-serif;
+      font-weight: 400;
+      line-height: 23px;
+      text-align: left;
+      color: #05000c;
+    }
+    
+    .candidate-name {
+      font-size: 32px;
+      font-family: Arial, sans-serif;
+      font-weight: 400;
+      line-height: 40px;
+      text-align: left;
+      color: #05000c;
+    }
+    
+    .section-title {
+      font-size: 18px;
+      font-family: Arial, sans-serif;
+      font-weight: 400;
+      line-height: 23px;
+      text-align: left;
+      color: #05000c;
+      padding: 12px;
+      width: 100%;
+      background-color: #f8f9fa;
+      border-radius: 8px;
+    }
+    
+    .label-text {
+      font-size: 14px;
+      font-family: Arial, sans-serif;
+      font-weight: 400;
+      line-height: 19px;
+      text-align: left;
+      color: #95a7be;
+    }
+    
+    .value-text {
+      font-size: 14px;
+      font-family: Arial, sans-serif;
+      font-weight: 400;
+      line-height: 19px;
+      text-align: left;
+      color: #05000c;
+    }
+    
+    .value-text-bold {
+      font-size: 14px;
+      font-family: Arial, sans-serif;
+      font-weight: 700;
+      line-height: 19px;
+      text-align: left;
+      color: #05000c;
+    }
+    
+    .content-text {
+      font-size: 14px;
+      font-family: Arial, sans-serif;
+      font-weight: 400;
+      line-height: 22px;
+      text-align: left;
+      color: #05000c;
+      white-space: pre-line;
+    }
+    
+    .resume-link {
+      font-size: 14px;
+      font-family: Arial, sans-serif;
+      font-weight: 400;
+      line-height: 19px;
+      text-align: left;
+      color: #96a7be;
+      text-decoration: underline;
+      word-break: break-all;
+    }
+    
+    .resume-label {
+      font-size: 14px;
+      font-family: Arial, sans-serif;
+      font-weight: 400;
+      line-height: 19px;
+      text-align: left;
+      color: #96a7be;
+    }
+    
+    /* Interactive components */
+    .score-badge {
+      font-size: 14px;
+      font-family: Arial, sans-serif;
+      font-weight: 700;
+      line-height: 19px;
+      text-align: left;
+      color: #ffffff;
+      background-color: #26cd58;
+      border-radius: 10px;
+      padding: 2px 16px;
+      display: inline-block;
+    }
+    
+    .recommend-button {
+      font-size: 14px;
+      font-family: Arial, sans-serif;
+      font-weight: 700;
+      line-height: 19px;
+      text-align: center;
+      color: #ffffff;
+      background-color: #26cd58;
+      border-radius: 10px;
+      padding: 2px 34px;
+      border: none;
+      cursor: pointer;
+      width: 100%;
+      transition: all 0.3s ease;
+    }
+    
+    .consider-button {
+      font-size: 14px;
+      font-family: Arial, sans-serif;
+      font-weight: 700;
+      line-height: 19px;
+      text-align: center;
+      color: #ffffff;
+      background-color: #faa61a;
+      border-radius: 10px;
+      padding: 2px 34px;
+      border: none;
+      cursor: pointer;
+      width: 100%;
+    }
+    
+    .reject-button {
+      font-size: 14px;
+      font-family: Arial, sans-serif;
+      font-weight: 700;
+      line-height: 19px;
+      text-align: center;
+      color: #ffffff;
+      background-color: #ff3d40;
+      border-radius: 10px;
+      padding: 2px 34px;
+      border: none;
+      cursor: pointer;
+      width: 100%;
+    }
+    
+    /* Table styles */
+    .evaluation-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+    }
+    
+    .table-header {
+      background-color: #05000c;
+      border-radius: 12px 12px 0px 0px;
+    }
+    
+    .table-header th {
+      font-size: 12px;
+      font-family: Arial, sans-serif;
+      font-weight: 700;
+      line-height: 17px;
+      text-align: left;
+      color: #ffffff;
+      padding: 8px 16px;
+    }
+    
+    .table-row {
+      border-bottom: 1px solid #e5e7eb;
+    }
+    
+    .table-cell {
+      font-size: 14px;
+      font-family: Arial, sans-serif;
+      font-weight: 400;
+      line-height: 22px;
+      text-align: left;
+      color: #05000c;
+      padding: 12px;
+      vertical-align: top;
+    }
+    
+    .score-button {
+      font-size: 14px;
+      font-family: Arial, sans-serif;
+      font-weight: 700;
+      line-height: 19px;
+      text-align: center;
+      color: #ffffff;
+      border-radius: 10px;
+      padding: 6px 16px;
+      border: none;
+      width: 100%;
+      max-width: 80px;
+    }
+    
+    .score-green {
+      background-color: #26cd58;
+    }
+    
+    .score-orange {
+      background-color: #faa61a;
+    }
+    
+    .score-red {
+      background-color: #ff3d40;
+    }
+    
+    /* Red flags section */
+    .red-flags-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      justify-content: flex-start;
+      align-items: flex-start;
+      width: 100%;
+      margin-top: 48px;
+    }
+    
+    .red-flags-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      justify-content: flex-start;
+      align-items: center;
+      width: 100%;
+    }
+    
+    .flag-item {
+      display: flex;
+      flex-direction: row;
+      gap: 12px;
+      justify-content: flex-start;
+      align-items: flex-start;
+      width: 100%;
+      padding: 12px 0;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    .flag-item:first-child {
+      border-top: 0px solid #e5e7eb;   
+    }
+
+    .flag-item:nth-last-child(1) {
+      border-bottom: 0px solid #e5e7eb;   
+    }
+    
+    .flag-icon {
+      width: 24px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+    
+    .flag-text {
+      font-size: 14px;
+      font-family: Arial, sans-serif;
+      font-weight: 400;
+      line-height: 22px;
+      text-align: left;
+      color: #05000c;
+      flex: 1;
+    }
+    
+    .footer-text {
+      font-size: 14px;
+      font-family: Arial, sans-serif;
+      font-weight: 400;
+      line-height: 19px;
+      text-align: left;
+      color: #96a7be;
+      margin-top: 118px;
+    }
+    
+    .divider-line {
+      width: 100%;
+      height: 1px;
+      background-color: #b1bac6;
+    }
+    
+    /* Responsive media queries */
+    @media (min-width: 640px) {
+      body {
+        padding: 24px;
+      }
+      
+      .report-title {
+        font-size: 18px;
+      }
+      
+      .candidate-name {
+        font-size: 40px;
+        line-height: 48px;
+      }
+      
+      .section-title {
+        font-size: 20px;
+      }
+      
+      .label-text, .value-text, .value-text-bold, .resume-link, .resume-label {
+        font-size: 15px;
+      }
+      
+      .content-text, .flag-text {
+        font-size: 15px;
+      }
+      
+      .info-analysis-row {
+        flex-direction: row;
+        gap: 32px;
+      }
+      
+      .basic-info-section {
+        width: 45%;
+      }
+      
+      .analysis-section {
+        width: 55%;
+      }
+      
+      .info-grid {
+        flex-direction: row;
+      }
+      
+      .info-labels {
+        width: 40%;
+      }
+      
+      .info-values {
+        width: 60%;
+      }
+      
+      .analysis-grid {
+        flex-direction: row;
+      }
+      
+      .analysis-labels {
+        width: 25%;
+        gap: 60px;
+      }
+      
+      .analysis-content {
+        width: 75%;
+      }
+    }
+    
+    @media (min-width: 768px) {
+      body {
+        padding: 32px;
+      }
+      
+      .candidate-name {
+        font-size: 48px;
+        line-height: 56px;
+      }
+      
+      .label-text, .value-text, .value-text-bold, .resume-link, .resume-label {
+        font-size: 16px;
+      }
+      
+      .content-text, .flag-text {
+        font-size: 16px;
+      }
+      
+      .table-header th {
+        font-size: 14px;
+      }
+      
+      .score-button {
+        font-size: 16px;
+      }
+    }
+    
+    @media (min-width: 1024px) {
+      .info-analysis-row {
+        gap: 40px;
+      }
+      
+      .basic-info-section {
+        width: 34%;
+      }
+      
+      .analysis-section {
+        width: 66%;
+      }
+      
+      .analysis-labels {
+        width: 18%;
+        gap: 78px;
+      }
+      
+      .analysis-content {
+        width: 82%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="main-container">
+    <div class="content-wrapper">
+      <header class="header-section">
+        <h1 class="report-title">Отчет по собеседованию {{ report_id }}</h1>
+        <h2 class="candidate-name">{{ candidate_name }}</h2>
+        <div style="display: flex; flex-direction: row; gap: 8px; align-items: center; width: 100%;">
+          <span class="resume-label">Резюме:</span>
+          <a href="{{ resume_url }}" class="resume-link" target="_blank" rel="noopener noreferrer">{{ resume_url }}</a>
+        </div>
+      </header>
+      
+      <section class="info-analysis-row">
+        <div class="basic-info-section">
+          <div class="section-title">Основная информация</div>
+          <div class="info-grid">
+            <div class="info-labels">
+              <span class="label-text">Кандидат:</span>
+              <span class="label-text">Позиция:</span>
+              <span class="label-text">Дата интервью:</span>
+              <span class="label-text">Общий балл:</span>
+              <span class="label-text">Рекомендация:</span>
+            </div>
+            <div class="info-values">
+              <span class="value-text-bold">{{ candidate_name }}</span>
+              <span class="value-text">{{ position }}</span>
+              <span class="value-text">{{ interview_date }}</span>
+              <span class="score-badge">{{ overall_score }}</span>
+              <button class="{{ recommendation_class }}">{{ recommendation_text }}</button>
+            </div>
+          </div>
+        </div>
+        
+        <div class="analysis-section">
+          <div class="section-title">Анализ кандидата</div>
+          <div class="analysis-grid">
+            <div class="analysis-labels">
+              <span class="label-text">Сильные стороны:</span>
+              <span class="label-text">Области для развития:</span>
+            </div>
+            <div class="analysis-content">
+              <p class="content-text">{{ strengths }}</p>
+              <p class="content-text">{{ areas_for_development }}</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+    
+    <section style="display: flex; flex-direction: column; justify-content: flex-start; align-items: flex-start; width: 100%; margin-bottom: 40px;">
+      <div style="display: flex; flex-direction: column; gap: 16px; justify-content: flex-start; align-items: flex-start; width: 100%;">
+        <h3 class="section-title" style="background: none; padding: 0;">Детальная оценка</h3>
+        
+        {% if evaluation_criteria %}
+        <table class="evaluation-table">
+          <thead class="table-header">
+            <tr>
+              <th style="width: 28%;">Критерий</th>
+              <th style="width: 10%;">Балл</th>
+              <th style="width: 40%;">Обоснование</th>
+              <th style="width: 22%;">Риски</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for criterion in evaluation_criteria %}
+            <tr class="table-row">
+              <td class="table-cell">{{ criterion.name }}</td>
+              <td class="table-cell">
+                <button class="score-button {{ criterion.score_class }}">{{ criterion.score }}/100</button>
+              </td>
+              <td class="table-cell">{{ criterion.justification }}</td>
+              <td class="table-cell">{{ criterion.concerns }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
+      </div>
+      
+      {% if red_flags %}
+      <div class="red-flags-section">
+        <div class="section-title">Красные флаги:</div>
+        <div class="red-flags-list">
+          {% for flag in red_flags %}
+          <div class="flag-item">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 5.00014C4.00002 4.86716 4.02656 4.73552 4.07807 4.61292C4.12959 4.49032 4.20503 4.37923 4.3 4.28614C5.38984 3.21778 6.84585 2.60488 8.37166 2.57218C9.89746 2.53948 11.3784 3.08945 12.513 4.11014L12.864 4.43815C13.5934 5.07724 14.5302 5.42957 15.5 5.42957C16.4698 5.42957 17.4066 5.07724 18.136 4.43815L18.385 4.21114C18.995 3.72814 19.912 4.11414 19.995 4.88714L20 5.00014V14.0001C20 14.1331 19.9734 14.2648 19.9219 14.3874C19.8704 14.51 19.795 14.6211 19.7 14.7141C18.6102 15.7825 17.1542 16.3954 15.6283 16.4281C14.1025 16.4608 12.6216 15.9108 11.487 14.8901L11.136 14.5621C10.4295 13.9431 9.52777 13.5925 8.58872 13.5717C7.64967 13.5508 6.73323 13.8611 6 14.4481V21.0001C5.99972 21.255 5.90212 21.5002 5.72715 21.6855C5.55218 21.8708 5.31305 21.9824 5.05861 21.9973C4.80416 22.0123 4.55362 21.9295 4.35817 21.7659C4.16271 21.6023 4.0371 21.3702 4.007 21.1171L4 21.0001V5.00014Z" fill="#FF3E41"/>
+            </svg>
+            <p class="flag-text">{{ flag }}</p>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+      
+      <p class="footer-text">Отчет сгенерирован автоматически • {{ generation_date }}</p>
+    </section>
+  </main>
+</body>
+</html>
