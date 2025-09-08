@@ -139,3 +139,35 @@ class SyncVacancyRepository:
         from app.models.vacancy import Vacancy
 
         return self.session.query(Vacancy).filter(Vacancy.id == vacancy_id).first()
+    
+    def create_vacancy(self, vacancy_create):
+        """Создать новую вакансию"""
+        from datetime import datetime
+        from app.models.vacancy import Vacancy
+        
+        # Конвертируем VacancyCreate в dict
+        if hasattr(vacancy_create, 'dict'):
+            vacancy_data = vacancy_create.dict()
+        elif hasattr(vacancy_create, 'model_dump'):
+            vacancy_data = vacancy_create.model_dump()
+        else:
+            vacancy_data = vacancy_create
+            
+        # Создаем новую вакансию
+        vacancy = Vacancy(
+            **vacancy_data,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        
+        self.session.add(vacancy)
+        self.session.flush()  # Получаем ID без коммита
+        self.session.refresh(vacancy)  # Обновляем объект из БД
+        
+        # Создаем простой объект с нужными данными для возврата
+        class VacancyResult:
+            def __init__(self, id, title):
+                self.id = id
+                self.title = title
+                
+        return VacancyResult(vacancy.id, vacancy.title)

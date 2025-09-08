@@ -1,458 +1,264 @@
 import io
+import os
 from datetime import datetime
 
-from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib.units import inch
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import (
-    Paragraph,
-    SimpleDocTemplate,
-    Spacer,
-    Table,
-    TableStyle,
-)
+from jinja2 import Template
+import pdfkit
 
 from app.core.s3 import s3_service
 from app.models.interview_report import InterviewReport, RecommendationType
 
 
 class PDFReportService:
-    """Сервис для генерации PDF отчетов по интервью"""
+    """Сервис для генерации PDF отчетов по интервью на основе HTML шаблона"""
 
     def __init__(self):
-        self._register_fonts()
-        self.styles = getSampleStyleSheet()
-        self._setup_custom_styles()
-
-    def _format_list_field(self, field_value) -> str:
-        """Форматирует поле со списком для отображения в PDF"""
-        if not field_value:
+        self.template_path = "templates/interview_report.html"
+        
+    def _load_html_template(self) -> str:
+        """Загружает HTML шаблон из файла"""
+        try:
+            with open(self.template_path, 'r', encoding='utf-8') as file:
+                return file.read()
+        except FileNotFoundError:
+            raise FileNotFoundError(f"HTML шаблон не найден: {self.template_path}")
+    
+    def _format_concerns_field(self, concerns):
+        """Форматирует поле concerns для отображения"""
+        if not concerns:
             return "—"
         
-        if isinstance(field_value, list):
-            # Если это список, объединяем элементы
-            return "\n• ".join([""] + field_value)
-        elif isinstance(field_value, str):
-            # Если это строка, возвращаем как есть
-            return field_value
+        if isinstance(concerns, list):
+            return "; ".join(concerns)
+        elif isinstance(concerns, str):
+            return concerns
         else:
-            # Для других типов конвертируем в строку
-            return str(field_value)
-
-    def _register_fonts(self):
-        """Регистрация шрифтов для поддержки кириллицы"""
-        try:
-            # Пытаемся использовать системные шрифты Windows
-            import os
-            
-            # Пути к шрифтам Windows
-            fonts_dir = "C:/Windows/Fonts"
-            
-            # Регистрируем Arial для русского текста
-            if os.path.exists(f"{fonts_dir}/arial.ttf"):
-                pdfmetrics.registerFont(TTFont('Arial-Unicode', f"{fonts_dir}/arial.ttf"))
-                pdfmetrics.registerFont(TTFont('Arial-Unicode-Bold', f"{fonts_dir}/arialbd.ttf"))
-            # Альтернативно используем Calibri
-            elif os.path.exists(f"{fonts_dir}/calibri.ttf"):
-                pdfmetrics.registerFont(TTFont('Arial-Unicode', f"{fonts_dir}/calibri.ttf"))
-                pdfmetrics.registerFont(TTFont('Arial-Unicode-Bold', f"{fonts_dir}/calibrib.ttf"))
-            # Если ничего не найдено, используем встроенный DejaVu
-            else:
-                # Fallback к стандартным шрифтам ReportLab с поддержкой Unicode
-                from reportlab.lib.fonts import addMapping
-                addMapping('Arial-Unicode', 0, 0, 'Helvetica')
-                addMapping('Arial-Unicode', 1, 0, 'Helvetica-Bold')
-                addMapping('Arial-Unicode', 0, 1, 'Helvetica-Oblique')
-                addMapping('Arial-Unicode', 1, 1, 'Helvetica-BoldOblique')
-                
-        except Exception as e:
-            print(f"Warning: Could not register custom fonts: {e}")
-            # Используем стандартные шрифты как fallback
-            from reportlab.lib.fonts import addMapping
-            addMapping('Arial-Unicode', 0, 0, 'Helvetica')
-            addMapping('Arial-Unicode', 1, 0, 'Helvetica-Bold')
-
-    def _setup_custom_styles(self):
-        """Настройка кастомных стилей для документа"""
-        # Заголовок отчета
-        self.styles.add(
-            ParagraphStyle(
-                name="ReportTitle",
-                parent=self.styles["Title"],
-                fontSize=18,
-                spaceAfter=30,
-                alignment=TA_CENTER,
-                textColor=colors.HexColor("#2E3440"),
-                fontName="Arial-Unicode-Bold",
-            )
-        )
-
-        # Заголовки секций
-        self.styles.add(
-            ParagraphStyle(
-                name="SectionHeader",
-                parent=self.styles["Heading1"],
-                fontSize=14,
-                spaceAfter=12,
-                spaceBefore=20,
-                textColor=colors.HexColor("#5E81AC"),
-                fontName="Arial-Unicode-Bold",
-            )
-        )
-
-        # Подзаголовки
-        self.styles.add(
-            ParagraphStyle(
-                name="SubHeader",
-                parent=self.styles["Heading2"],
-                fontSize=12,
-                spaceAfter=8,
-                spaceBefore=15,
-                textColor=colors.HexColor("#81A1C1"),
-                fontName="Arial-Unicode-Bold",
-            )
-        )
-
-        # Обычный текст
-        self.styles.add(
-            ParagraphStyle(
-                name="CustomBodyText",
-                parent=self.styles["Normal"],
-                fontSize=10,
-                spaceAfter=6,
-                alignment=TA_JUSTIFY,
-                textColor=colors.HexColor("#2E3440"),
-                fontName="Arial-Unicode",
-            )
-        )
-
-        # Стиль для метрик
-        self.styles.add(
-            ParagraphStyle(
-                name="MetricValue",
-                parent=self.styles["Normal"],
-                fontSize=12,
-                alignment=TA_CENTER,
-                textColor=colors.HexColor("#5E81AC"),
-                fontName="Arial-Unicode-Bold",
-            )
-        )
-
-    async def generate_interview_report_pdf(
-        self, report: InterviewReport, candidate_name: str, position: str
-    ) -> bytes:
+            return str(concerns)
+    
+    def _get_score_class(self, score: int) -> str:
+        """Возвращает CSS класс для цвета оценки"""
+        if score >= 80:
+            return "score-green"
+        elif score >= 60:
+            return "score-orange"
+        else:
+            return "score-red"
+    
+    def _format_recommendation(self, recommendation: RecommendationType) -> tuple:
+        """Форматирует рекомендацию для отображения"""
+        if recommendation == RecommendationType.HIRE:
+            return ("Рекомендуем", "recommend-button")
+        elif recommendation == RecommendationType.CONSIDER:
+            return ("К рассмотрению", "consider-button")
+        else:
+            return ("Не рекомендуем", "reject-button")
+    
+    def generate_pdf_report(self, interview_report: InterviewReport) -> bytes:
         """
-        Генерирует PDF отчет по интервью
-
+        Генерирует PDF отчет на основе HTML шаблона
+        
         Args:
-            report: Модель отчета из БД
-            candidate_name: Имя кандидата
-            position: Название позиции
-
+            interview_report: Данные отчета по интервью
+            
         Returns:
             bytes: PDF файл в виде байтов
         """
-        buffer = io.BytesIO()
-        doc = SimpleDocTemplate(
-            buffer,
-            pagesize=A4,
-            rightMargin=72,
-            leftMargin=72,
-            topMargin=72,
-            bottomMargin=72,
-        )
-
-        # Собираем элементы документа
-        story = []
-
-        # Заголовок отчета
-        story.append(
-            Paragraph(
-                f"Отчет по собеседованию<br/>{candidate_name}",
-                self.styles["ReportTitle"],
-            )
-        )
-
-        # Основная информация
-        story.append(Paragraph("Основная информация", self.styles["SectionHeader"]))
-
-        basic_info = [
-            ["Кандидат:", candidate_name],
-            ["Позиция:", position],
-            ["Дата интервью:", report.created_at.strftime("%d.%m.%Y %H:%M")],
-            ["Общий балл:", f"{report.overall_score}/100"],
-            ["Рекомендация:", self._format_recommendation(report.recommendation)],
-        ]
-
-        basic_table = Table(basic_info, colWidths=[2 * inch, 4 * inch])
-        basic_table.setStyle(
-            TableStyle(
-                [
-                    ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-                    ("FONTNAME", (0, 0), (0, -1), "Arial-Unicode-Bold"),
-                    ("FONTNAME", (1, 0), (-1, -1), "Arial-Unicode"),  # Правая колонка обычным шрифтом
-                    ("FONTSIZE", (0, 0), (-1, -1), 10),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-                    ("TOPPADDING", (0, 0), (-1, -1), 6),
-                ]
-            )
-        )
-        story.append(basic_table)
-        story.append(Spacer(1, 20))
-
-        # Оценки по критериям
-        story.append(Paragraph("Детальная оценка", self.styles["SectionHeader"]))
-
-        # Стиль для текста в таблице с автопереносом
-        table_text_style = ParagraphStyle(
-            name="TableText",
-            parent=self.styles["Normal"],
-            fontSize=8,
-            fontName="Arial-Unicode",
-            leading=10,
-        )
+        try:
+            # Загружаем HTML шаблон
+            html_template = self._load_html_template()
+            
+            # Подготавливаем данные для шаблона
+            template_data = self._prepare_template_data(interview_report)
+            
+            # Рендерим HTML с данными
+            template = Template(html_template)
+            rendered_html = template.render(**template_data)
+            
+            # Настройки для wkhtmltopdf
+            options = {
+                'page-size': 'A4',
+                'margin-top': '0.75in',
+                'margin-right': '0.75in',
+                'margin-bottom': '0.75in',
+                'margin-left': '0.75in',
+                'encoding': 'UTF-8',
+                'no-outline': None,
+                'enable-local-file-access': None
+            }
+            
+            # Генерируем PDF
+            pdf_bytes = pdfkit.from_string(rendered_html, False, options=options)
+            
+            return pdf_bytes
+            
+        except Exception as e:
+            raise Exception(f"Ошибка при генерации PDF: {str(e)}")
+    
+    def _prepare_template_data(self, interview_report: InterviewReport) -> dict:
+        """Подготавливает данные для HTML шаблона"""
         
-        criteria_data = [
-            [
-                Paragraph("Критерий", self.styles["CustomBodyText"]),
-                Paragraph("Балл", self.styles["CustomBodyText"]),
-                Paragraph("Обоснование", self.styles["CustomBodyText"]),
-                Paragraph("Риски", self.styles["CustomBodyText"]),
-            ],
-            [
-                Paragraph("Технические навыки", table_text_style),
-                Paragraph(f"{report.technical_skills_score}/100", table_text_style),
-                Paragraph(report.technical_skills_justification or "—", table_text_style),
-                Paragraph(self._format_list_field(report.technical_skills_concerns), table_text_style),
-            ],
-            [
-                Paragraph("Релевантность опыта", table_text_style),
-                Paragraph(f"{report.experience_relevance_score}/100", table_text_style),
-                Paragraph(report.experience_relevance_justification or "—", table_text_style),
-                Paragraph(self._format_list_field(report.experience_relevance_concerns), table_text_style),
-            ],
-            [
-                Paragraph("Коммуникация", table_text_style),
-                Paragraph(f"{report.communication_score}/100", table_text_style),
-                Paragraph(report.communication_justification or "—", table_text_style),
-                Paragraph(self._format_list_field(report.communication_concerns), table_text_style),
-            ],
-            [
-                Paragraph("Решение задач", table_text_style),
-                Paragraph(f"{report.problem_solving_score}/100", table_text_style),
-                Paragraph(report.problem_solving_justification or "—", table_text_style),
-                Paragraph(self._format_list_field(report.problem_solving_concerns), table_text_style),
-            ],
-            [
-                Paragraph("Культурное соответствие", table_text_style),
-                Paragraph(f"{report.cultural_fit_score}/100", table_text_style),
-                Paragraph(report.cultural_fit_justification or "—", table_text_style),
-                Paragraph(self._format_list_field(report.cultural_fit_concerns), table_text_style),
-            ],
-        ]
-
-        criteria_table = Table(
-            criteria_data, colWidths=[1.5 * inch, 0.6 * inch, 2.8 * inch, 2.1 * inch]
-        )
-        criteria_table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#5E81AC")),
-                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                    ("ALIGN", (1, 1), (1, -1), "CENTER"),  # Центрирование баллов
-                    ("ALIGN", (0, 0), (-1, -1), "LEFT"),   # Остальное слева
-                    ("GRID", (0, 0), (-1, -1), 1, colors.HexColor("#D8DEE9")),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-                    ("TOPPADDING", (0, 0), (-1, -1), 8),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8F9FA")]),
-                ]
-            )
-        )
-
-        # Цветовое кодирование баллов
-        for i in range(1, 6):  # строки с баллами
-            score_cell = (1, i)
-            if hasattr(
-                report,
-                [
-                    "technical_skills_score",
-                    "experience_relevance_score",
-                    "communication_score",
-                    "problem_solving_score",
-                    "cultural_fit_score",
-                ][i - 1],
-            ):
-                score = getattr(
-                    report,
-                    [
-                        "technical_skills_score",
-                        "experience_relevance_score",
-                        "communication_score",
-                        "problem_solving_score",
-                        "cultural_fit_score",
-                    ][i - 1],
-                )
-                if score >= 80:
-                    criteria_table.setStyle(
-                        TableStyle(
-                            [
-                                (
-                                    "BACKGROUND",
-                                    score_cell,
-                                    score_cell,
-                                    colors.HexColor("#A3BE8C"),
-                                )
-                            ]
-                        )
-                    )
-                elif score >= 60:
-                    criteria_table.setStyle(
-                        TableStyle(
-                            [
-                                (
-                                    "BACKGROUND",
-                                    score_cell,
-                                    score_cell,
-                                    colors.HexColor("#EBCB8B"),
-                                )
-                            ]
-                        )
-                    )
-                else:
-                    criteria_table.setStyle(
-                        TableStyle(
-                            [
-                                (
-                                    "BACKGROUND",
-                                    score_cell,
-                                    score_cell,
-                                    colors.HexColor("#BF616A"),
-                                )
-                            ]
-                        )
-                    )
-
-        story.append(criteria_table)
-        story.append(Spacer(1, 20))
-
-        # Сильные и слабые стороны
-        if report.strengths or report.weaknesses:
-            story.append(Paragraph("Анализ кандидата", self.styles["SectionHeader"]))
-
-            if report.strengths:
-                story.append(Paragraph("Сильные стороны:", self.styles["SubHeader"]))
-                for strength in report.strengths:
-                    story.append(Paragraph(f"• {strength}", self.styles["CustomBodyText"]))
-                story.append(Spacer(1, 10))
-
-            if report.weaknesses:
-                story.append(
-                    Paragraph("Области для развития:", self.styles["SubHeader"])
-                )
-                for weakness in report.weaknesses:
-                    story.append(Paragraph(f"• {weakness}", self.styles["CustomBodyText"]))
-                story.append(Spacer(1, 15))
-
+        # Основная информация о кандидате
+        candidate_name = interview_report.resume.applicant_name or "Не указано"
+        position = "Не указана"
+        
+        # Получаем название позиции из связанной вакансии
+        if hasattr(interview_report.resume, 'vacancy') and interview_report.resume.vacancy:
+            position = interview_report.resume.vacancy.title
+        
+        # Форматируем дату интервью
+        interview_date = "Не указана"
+        if interview_report.interview_session and interview_report.interview_session.interview_start_time:
+            interview_date = interview_report.interview_session.interview_start_time.strftime("%d.%m.%Y %H:%M")
+        
+        # Общий балл и рекомендация
+        overall_score = interview_report.overall_score or 0
+        recommendation_text, recommendation_class = self._format_recommendation(interview_report.recommendation)
+        
+        # Сильные стороны и области развития
+        strengths = self._format_concerns_field(interview_report.strengths_concerns) if interview_report.strengths_concerns else "Не указаны"
+        areas_for_development = self._format_concerns_field(interview_report.areas_for_development_concerns) if interview_report.areas_for_development_concerns else "Не указаны"
+        
+        # Детальная оценка
+        evaluation_criteria = []
+        
+        # Технические навыки
+        if interview_report.technical_skills_score is not None:
+            evaluation_criteria.append({
+                'name': 'Технические навыки',
+                'score': interview_report.technical_skills_score,
+                'score_class': self._get_score_class(interview_report.technical_skills_score),
+                'justification': interview_report.technical_skills_justification or "—",
+                'concerns': self._format_concerns_field(interview_report.technical_skills_concerns)
+            })
+        
+        # Релевантность опыта
+        if interview_report.experience_relevance_score is not None:
+            evaluation_criteria.append({
+                'name': 'Релевантность опыта',
+                'score': interview_report.experience_relevance_score,
+                'score_class': self._get_score_class(interview_report.experience_relevance_score),
+                'justification': interview_report.experience_relevance_justification or "—",
+                'concerns': self._format_concerns_field(interview_report.experience_relevance_concerns)
+            })
+        
+        # Коммуникация
+        if interview_report.communication_score is not None:
+            evaluation_criteria.append({
+                'name': 'Коммуникация',
+                'score': interview_report.communication_score,
+                'score_class': self._get_score_class(interview_report.communication_score),
+                'justification': interview_report.communication_justification or "—",
+                'concerns': self._format_concerns_field(interview_report.communication_concerns)
+            })
+        
+        # Решение задач
+        if interview_report.problem_solving_score is not None:
+            evaluation_criteria.append({
+                'name': 'Решение задач',
+                'score': interview_report.problem_solving_score,
+                'score_class': self._get_score_class(interview_report.problem_solving_score),
+                'justification': interview_report.problem_solving_justification or "—",
+                'concerns': self._format_concerns_field(interview_report.problem_solving_concerns)
+            })
+        
+        # Культурное соответствие
+        if interview_report.cultural_fit_score is not None:
+            evaluation_criteria.append({
+                'name': 'Культурное соответствие',
+                'score': interview_report.cultural_fit_score,
+                'score_class': self._get_score_class(interview_report.cultural_fit_score),
+                'justification': interview_report.cultural_fit_justification or "—",
+                'concerns': self._format_concerns_field(interview_report.cultural_fit_concerns)
+            })
+        
         # Красные флаги
-        if report.red_flags:
-            story.append(Paragraph("Красные флаги:", self.styles["SectionHeader"]))
-            for red_flag in report.red_flags:
-                story.append(
-                    Paragraph(
-                        f"{red_flag}",
-                        ParagraphStyle(
-                            name="RedFlag",
-                            parent=self.styles["CustomBodyText"],
-                            textColor=colors.HexColor("#BF616A"),
-                        ),
-                    )
-                )
-            story.append(Spacer(1, 15))
-
-        # Рекомендации и следующие шаги
-        if report.next_steps:
-            story.append(Paragraph("Рекомендации:", self.styles["SectionHeader"]))
-            story.append(Paragraph(report.next_steps, self.styles["CustomBodyText"]))
-            story.append(Spacer(1, 15))
-
-        # Подпись
-        story.append(Spacer(1, 30))
-        story.append(
-            Paragraph(
-                f"Отчет сгенерирован автоматически • {datetime.now().strftime('%d.%m.%Y %H:%M')}",
-                ParagraphStyle(
-                    name="Footer",
-                    parent=self.styles["Normal"],
-                    fontSize=8,
-                    alignment=TA_CENTER,
-                    textColor=colors.HexColor("#4C566A"),
-                    fontName="Arial-Unicode",
-                ),
-            )
-        )
-
-        # Генерируем PDF
-        doc.build(story)
-        buffer.seek(0)
-        return buffer.getvalue()
-
-    def _format_recommendation(self, recommendation: RecommendationType) -> str:
-        """Форматирует рекомендацию для отображения"""
-        recommendation_map = {
-            RecommendationType.STRONGLY_RECOMMEND: "Настоятельно рекомендуем",
-            RecommendationType.RECOMMEND: "Рекомендуем",
-            RecommendationType.CONSIDER: "Рассмотреть кандидатуру",
-            RecommendationType.REJECT: "Не рекомендуем",
+        red_flags = []
+        if interview_report.red_flags:
+            if isinstance(interview_report.red_flags, list):
+                red_flags = interview_report.red_flags
+            elif isinstance(interview_report.red_flags, str):
+                red_flags = [interview_report.red_flags]
+        
+        # Ссылка на резюме
+        resume_url = interview_report.resume.file_url if interview_report.resume.file_url else "#"
+        
+        # ID отчета
+        report_id = f"#{interview_report.id}" if interview_report.id else "#0"
+        
+        # Дата генерации отчета
+        generation_date = datetime.now().strftime("%d.%m.%Y %H:%M")
+        
+        return {
+            'report_id': report_id,
+            'candidate_name': candidate_name,
+            'position': position,
+            'interview_date': interview_date,
+            'overall_score': overall_score,
+            'recommendation_text': recommendation_text,
+            'recommendation_class': recommendation_class,
+            'strengths': strengths,
+            'areas_for_development': areas_for_development,
+            'evaluation_criteria': evaluation_criteria,
+            'red_flags': red_flags,
+            'resume_url': resume_url,
+            'generation_date': generation_date
         }
-        return recommendation_map.get(recommendation, str(recommendation))
 
-    async def generate_and_upload_pdf(
-        self, report: InterviewReport, candidate_name: str, position: str
-    ) -> str | None:
+    async def upload_pdf_to_s3(self, pdf_bytes: bytes, filename: str) -> str:
         """
-        Генерирует PDF отчет и загружает его в S3
-
+        Загружает PDF файл в S3 и возвращает публичную ссылку
+        
         Args:
-            report: Модель отчета из БД
-            candidate_name: Имя кандидата
-            position: Название позиции
-
+            pdf_bytes: PDF файл в виде байтов
+            filename: Имя файла
+            
         Returns:
-            str | None: URL файла в S3 или None при ошибке
+            str: Публичная ссылка на файл в S3
+        """
+        try:
+            pdf_stream = io.BytesIO(pdf_bytes)
+            
+            # Загружаем с публичным доступом
+            file_url = await s3_service.upload_file(
+                pdf_stream, 
+                filename, 
+                content_type="application/pdf",
+                public=True
+            )
+            
+            return file_url
+            
+        except Exception as e:
+            raise Exception(f"Ошибка при загрузке PDF в S3: {str(e)}")
+
+    async def generate_and_upload_pdf(self, report: InterviewReport, candidate_name: str = None, position: str = None) -> str:
+        """
+        Генерирует PDF отчет и загружает его в S3 (метод обратной совместимости)
+        
+        Args:
+            report: Отчет по интервью
+            candidate_name: Имя кандидата (не используется, берется из отчета)
+            position: Позиция (не используется, берется из отчета)
+            
+        Returns:
+            str: Публичная ссылка на PDF файл
         """
         try:
             # Генерируем PDF
-            pdf_bytes = await self.generate_interview_report_pdf(
-                report, candidate_name, position
-            )
-
-            # Формируем имя файла
-            safe_name = "".join(
-                c for c in candidate_name if c.isalnum() or c in (" ", "-", "_")
-            ).strip()
-            safe_name = safe_name.replace(" ", "_")
+            pdf_bytes = self.generate_pdf_report(report)
+            
+            # Создаем имя файла
+            safe_name = report.resume.applicant_name or "candidate"
+            safe_name = "".join(c for c in safe_name if c.isalnum() or c in (' ', '-', '_')).strip()
             filename = f"interview_report_{safe_name}_{report.id}.pdf"
-
-            # Загружаем в S3 с публичным доступом
-            file_url = await s3_service.upload_file(
-                file_content=pdf_bytes,
-                file_name=filename,
-                content_type="application/pdf",
-                public=True,
-            )
-
-            return file_url
-
+            
+            # Загружаем в S3
+            pdf_url = await self.upload_pdf_to_s3(pdf_bytes, filename)
+            
+            return pdf_url
+            
         except Exception as e:
-            print(f"Error generating and uploading PDF report: {e}")
-            return None
+            raise Exception(f"Ошибка при генерации и загрузке PDF: {str(e)}")
 
 
 # Экземпляр сервиса

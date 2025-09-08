@@ -31,6 +31,8 @@ dependencies = [
     "comtypes>=1.4.12",
     "reportlab>=4.4.3",
     "yandex-speechkit>=1.5.0",
+    "pdfkit>=1.0.0",
+    "jinja2>=3.1.6",
 ]
 
 [build-system]

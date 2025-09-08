@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 from app.core.database import get_session
 from app.repositories.resume_repository import ResumeRepository
-from app.services.pdf_report_service import pdf_report_service
+from app.services.pdf_report_service import PDFReportService
 from celery_worker.interview_analysis_task import (
     analyze_multiple_candidates,
     generate_interview_report,
@@ -305,6 +305,7 @@ async def generate_pdf_report(
     resume_id: int,
     session=Depends(get_session),
     resume_repo: ResumeRepository = Depends(ResumeRepository),
+    pdf_report_service: PDFReportService = Depends(PDFReportService),
 ):
     """
     Генерирует PDF отчет по интервью

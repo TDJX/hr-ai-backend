@@ -578,3 +578,126 @@ def generate_interview_questions_task(self, resume_id: str, job_description: str
             },
         )
         raise Exception(f"Ошибка при генерации вопросов: {str(e)}")
+
+
+@celery_app.task(bind=True)
+def parse_vacancy_task(self, file_content_base64: str, filename: str, create_vacancy: bool = False):
+    """
+    Асинхронная задача парсинга вакансии из файла
+    
+    Args:
+        file_content_base64: Содержимое файла в base64
+        filename: Имя файла для определения формата
+        create_vacancy: Создать вакансию в БД после парсинга
+    """
+    try:
+        import base64
+        from app.services.vacancy_parser_service import vacancy_parser_service
+        from app.models.vacancy import VacancyCreate
+        
+        # Обновляем статус задачи
+        self.update_state(
+            state="PENDING",
+            meta={"status": "Начинаем парсинг вакансии...", "progress": 10}
+        )
+        
+        # Декодируем содержимое файла
+        file_content = base64.b64decode(file_content_base64)
+        
+        # Шаг 1: Извлечение текста из файла
+        self.update_state(
+            state="PROGRESS",
+            meta={"status": "Извлекаем текст из файла...", "progress": 30}
+        )
+        
+        raw_text = vacancy_parser_service.extract_text_from_file(file_content, filename)
+        
+        if not raw_text.strip():
+            raise ValueError("Не удалось извлечь текст из файла")
+        
+        # Шаг 2: Парсинг с помощью AI
+        self.update_state(
+            state="PROGRESS", 
+            meta={"status": "Обрабатываем текст с помощью AI...", "progress": 70}
+        )
+        
+        import asyncio
+        parsed_data = asyncio.run(vacancy_parser_service.parse_vacancy_with_ai(raw_text))
+        
+        # Шаг 3: Создание вакансии (если требуется)
+        created_vacancy = None
+        print(f"create_vacancy parameter: {create_vacancy}, type: {type(create_vacancy)}")
+        
+        if create_vacancy:
+            self.update_state(
+                state="PROGRESS",
+                meta={"status": "Создаем вакансию в базе данных...", "progress": 90}
+            )
+            
+            try:
+                print(f"Parsed data for vacancy creation: {parsed_data}")
+                vacancy_create = VacancyCreate(**parsed_data)
+                print(f"VacancyCreate object created successfully: {vacancy_create}")
+                
+                with get_sync_session() as session:
+                    vacancy_repo = SyncVacancyRepository(session)
+                    created_vacancy = vacancy_repo.create_vacancy(vacancy_create)
+                    print(f"Vacancy created with ID: {created_vacancy.id if created_vacancy else 'None'}")
+                    
+            except Exception as e:
+                import traceback
+                error_details = traceback.format_exc()
+                print(f"Error creating vacancy: {str(e)}")
+                print(f"Full traceback: {error_details}")
+                
+                # Возвращаем парсинг, но предупреждаем об ошибке создания
+                self.update_state(
+                    state="SUCCESS",
+                    meta={
+                        "status": f"Парсинг выполнен, но ошибка при создании вакансии: {str(e)}",
+                        "progress": 100,
+                        "result": parsed_data,
+                        "warning": f"Ошибка создания вакансии: {str(e)}"
+                    }
+                )
+                
+                return {
+                    "status": "parsed_with_warning",
+                    "parsed_data": parsed_data,
+                    "warning": f"Ошибка при создании вакансии: {str(e)}"
+                }
+        
+        # Завершено успешно
+        response_message = "Парсинг выполнен успешно"
+        if created_vacancy:
+            response_message += f". Вакансия создана с ID: {created_vacancy.id}"
+            
+        self.update_state(
+            state="SUCCESS",
+            meta={
+                "status": response_message,
+                "progress": 100,
+                "result": parsed_data,
+                "vacancy_id": created_vacancy.id if created_vacancy else None
+            }
+        )
+        
+        return {
+            "status": "completed",
+            "parsed_data": parsed_data,
+            "vacancy_id": created_vacancy.id if created_vacancy else None,
+            "message": response_message
+        }
+        
+    except Exception as e:
+        # В случае ошибки
+        self.update_state(
+            state="FAILURE",
+            meta={
+                "status": f"Ошибка при парсинге вакансии: {str(e)}",
+                "progress": 0,
+                "error": str(e)
+            }
+        )
+        
+        raise Exception(f"Ошибка при парсинге вакансии: {str(e)}")
