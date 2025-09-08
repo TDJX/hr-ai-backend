@@ -9,6 +9,7 @@ from app.routers.admin_router import router as admin_router
 from app.routers.analysis_router import router as analysis_router
 from app.routers.interview_router import router as interview_router
 from app.routers.session_router import router as session_router
+from app.routers.interview_reports_router import router as interview_report_router
 
 
 @asynccontextmanager
@@ -56,7 +57,7 @@ app.include_router(session_router, prefix="/api/v1")
 app.include_router(interview_router, prefix="/api/v1")
 app.include_router(analysis_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
-
+app.include_router(interview_report_router, prefix="/api/v1")
 
 @app.get("/")
 async def root():
