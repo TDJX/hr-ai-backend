@@ -27,14 +27,7 @@ def upgrade() -> None:
         sa.Column("room_name", sa.String(length=255), nullable=False),
         sa.Column(
             "status",
-            sa.Enum(
-                "created",
-                "active",
-                "completed",
-                "failed",
-                name="interviewstatus",
-                create_type=False,
-            ),
+            sa.TEXT(),
             nullable=True,
         ),
         sa.Column("transcript", sa.Text(), nullable=True),
