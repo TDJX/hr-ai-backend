@@ -65,9 +65,8 @@ class InterviewAgent:
         self.interview_finalized = False  # Флаг завершения интервью
         
         # Трекинг времени интервью
-        import time
-
-        self.interview_start_time = time.time()
+        self.interview_start_time = None  # Устанавливается при фактическом старте
+        self.interview_end_time = None    # Устанавливается при завершении
         self.duration_minutes = interview_plan.get("interview_structure", {}).get(
             "duration_minutes", 10
         )
@@ -76,10 +75,6 @@ class InterviewAgent:
             "sections", []
         )
         self.total_sections = len(self.sections)
-
-        logger.info(
-            f"[TIME] Interview started at {time.strftime('%H:%M:%S')}, duration: {self.duration_minutes} min"
-        )
 
     def get_current_section(self) -> dict:
         """Получить текущую секцию интервью"""
@@ -126,11 +121,10 @@ class InterviewAgent:
         key_evaluation_points = self.interview_plan.get("key_evaluation_points", [])
 
         # Вычисляем текущее время интервью
-        import time
-
-        elapsed_minutes = (time.time() - self.interview_start_time) / 60
-        remaining_minutes = max(0, self.duration_minutes - elapsed_minutes)
-        time_percentage = min(100, (elapsed_minutes / self.duration_minutes) * 100)
+        time_info = self.get_time_info()
+        elapsed_minutes = time_info["elapsed_minutes"]
+        remaining_minutes = time_info["remaining_minutes"] 
+        time_percentage = time_info["time_percentage"]
 
         # Формируем план интервью для агента
         sections_info = "\n".join(
@@ -193,7 +187,7 @@ class InterviewAgent:
 - Контактное лицо: {self.vacancy_data.get('contacts_name') or 'Не указано'}"""
 
         return f"""
-Ты опытный HR-интервьюер, который проводит адаптивное голосовое собеседование. Представься контактным именем из вакансии (если оно есть)
+Ты опытный HR-интервьюер Стефани, который проводит адаптивное голосовое собеседование. Представься контактным именем из вакансии (если оно есть)
 
 ИНФОРМАЦИЯ О ВАКАНСИИ:
 
@@ -232,6 +226,10 @@ class InterviewAgent:
 
 Проблемные / кейсы (20%) — проверить мышление и подход к решению.
 Пример: "У нас есть система, которая падает раз в неделю. Как бы ты подошёл к диагностике проблемы?"
+
+Задавай вопросы кратко и понятно. Не вываливай кучу информации на человека.
+Не перечисляй человеку все пункты и вопросы из секции. Предлагай один общий вопрос или задавай уточняющие по по очереди.
+Ты должна спрашивать вопросы максимум в 3 предложения
 
 ВРЕМЯ ИНТЕРВЬЮ:
 - Запланированная длительность: {self.duration_minutes} минут
@@ -286,9 +284,17 @@ class InterviewAgent:
         """Получает информацию о времени интервью"""
         import time
 
-        elapsed_minutes = (time.time() - self.interview_start_time) / 60
-        remaining_minutes = max(0.0, self.duration_minutes - elapsed_minutes)
-        time_percentage = min(100.0, (elapsed_minutes / self.duration_minutes) * 100)
+        if self.interview_start_time is None:
+            # Интервью еще не началось
+            elapsed_minutes = 0.0
+            remaining_minutes = float(self.duration_minutes)
+            time_percentage = 0.0
+        else:
+            # Интервью идет
+            current_time = self.interview_end_time or time.time()
+            elapsed_minutes = (current_time - self.interview_start_time) / 60
+            remaining_minutes = max(0.0, self.duration_minutes - elapsed_minutes)
+            time_percentage = min(100.0, (elapsed_minutes / self.duration_minutes) * 100)
 
         return {
             "elapsed_minutes": elapsed_minutes,
@@ -421,8 +427,9 @@ async def entrypoint(ctx: JobContext):
     # TTS
     tts = (
         openai.TTS(
-            model="gpt-4o-mini-tts",
+            model="tts-1-hd",
             api_key=settings.openai_api_key,
+            voice='coral'
         )
         if settings.openai_api_key
         else silero.TTS(language="ru", model="v4_ru")
@@ -473,6 +480,18 @@ async def entrypoint(ctx: JobContext):
             return
 
         interviewer_instance.interview_finalized = True
+        
+        # Устанавливаем время завершения интервью
+        import time
+        interviewer_instance.interview_end_time = time.time()
+        
+        if interviewer_instance.interview_start_time:
+            total_minutes = (interviewer_instance.interview_end_time - interviewer_instance.interview_start_time) / 60
+            logger.info(
+                f"[TIME] Interview ended at {time.strftime('%H:%M:%S')}, total duration: {total_minutes:.1f} min"
+            )
+        else:
+            logger.info(f"[TIME] Interview ended at {time.strftime('%H:%M:%S')} (no start time recorded)")
 
         try:
             logger.info(
@@ -543,11 +562,13 @@ async def entrypoint(ctx: JobContext):
 
     # --- Мониторинг команд завершения ---
     async def monitor_end_commands():
-        """Мониторит команды завершения сессии"""
+        """Мониторит команды завершения сессии и лимит времени"""
         command_file = "agent_commands.json"
+        TIME_LIMIT_MINUTES = 60  # Жесткий лимит времени интервью
 
         while not interviewer.interview_finalized:
             try:
+                # Проверяем команды завершения
                 if os.path.exists(command_file):
                     with open(command_file, encoding="utf-8") as f:
                         command = json.load(f)
@@ -566,71 +587,50 @@ async def entrypoint(ctx: JobContext):
                             )
                             break
 
-                await asyncio.sleep(1)  # Проверяем каждые 1 секунды
+                # Проверяем превышение лимита времени
+                if interviewer.interview_start_time is not None:
+                    time_info = interviewer.get_time_info()
+                    if time_info["elapsed_minutes"] >= TIME_LIMIT_MINUTES:
+                        logger.warning(
+                            f"[TIME_LIMIT] Interview exceeded {TIME_LIMIT_MINUTES} minutes "
+                            f"({time_info['elapsed_minutes']:.1f} min), forcing completion"
+                        )
+                        
+                        if not interviewer.interview_finalized:
+                            await complete_interview_sequence(
+                                ctx.room.name, interviewer
+                            )
+                            break
+
+                await asyncio.sleep(2)  # Проверяем каждые 5 секунд
 
             except Exception as e:
                 logger.error(f"[COMMAND] Error monitoring commands: {str(e)}")
-                await asyncio.sleep(5)
+                await asyncio.sleep(2)
 
     # Запускаем мониторинг команд в фоне
     asyncio.create_task(monitor_end_commands())
-    
-    # --- Обработчик состояния пользователя (замена мониторинга тишины) ---
-    disconnect_timer: asyncio.Task | None = None
     
     @session.on("user_state_changed")
     def on_user_state_changed(event):
         """Обработчик изменения состояния пользователя (активен/неактивен)"""
         
         async def on_change():
-            nonlocal disconnect_timer
 
             logger.info(f"[USER_STATE] User state changed to: {event.new_state}")
 
-            # === Пользователь начал говорить ===
-            if event.new_state == "speaking":
-                # Если есть таймер на 30 секунд — отменяем его
-                if disconnect_timer is not None:
-                    logger.info("[USER_STATE] Cancelling disconnect timer due to speaking")
-                    disconnect_timer.cancel()
-                    disconnect_timer = None
-
             # === Пользователь молчит более 10 секунд (state == away) ===
-            elif event.new_state == "away" and interviewer.intro_done:
+            if event.new_state == "away" and interviewer.intro_done:
                 logger.info("[USER_STATE] User away detected, sending check-in message...")
 
-                # 1) Первое сообщение — проверка связи
-                handle = await session.generate_reply(
+                # сообщение — проверка связи
+                await session.generate_reply(
                     instructions=(
                         "Клиент молчит уже больше 10 секунд. "
                         "Проверь связь фразой вроде 'Приём! Ты меня слышишь?' "
                         "или 'Связь не пропала?'"
                     )
                 )
-                await handle  # ждем завершения первой реплики
-
-                # 2) Таймер на 30 секунд
-                async def disconnect_timeout():
-                    try:
-                        await asyncio.sleep(30)
-                        logger.info("[DISCONNECT_TIMER] 30 seconds passed, sending disconnect message")
-
-                        # Второе сообщение — считаем, что клиент отключился
-                        await session.generate_reply(
-                            instructions="Похоже клиент отключился"
-                        )
-                        
-                        logger.info("[DISCONNECT_TIMER] Disconnect message sent successfully")
-                    except asyncio.CancelledError:
-                        logger.info("[DISCONNECT_TIMER] Timer cancelled before completion")
-                    except Exception as e:
-                        logger.error(f"[DISCONNECT_TIMER] Error in disconnect timeout: {e}")
-
-                # 3) Если уже есть активный таймер — отменяем его перед запуском нового
-                if disconnect_timer is not None:
-                    disconnect_timer.cancel()
-
-                disconnect_timer = asyncio.create_task(disconnect_timeout())
 
         asyncio.create_task(on_change())
 
@@ -705,6 +705,12 @@ async def entrypoint(ctx: JobContext):
         # Обновляем прогресс интервью
         if not interviewer.intro_done:
             interviewer.intro_done = True
+            # Устанавливаем время начала интервью при первом сообщении
+            import time
+            interviewer.interview_start_time = time.time()
+            logger.info(
+                f"[TIME] Interview started at {time.strftime('%H:%M:%S')}, duration: {interviewer.duration_minutes} min"
+            )
 
         # Обновляем счетчик сообщений и треким время
         interviewer.questions_asked_total += 1

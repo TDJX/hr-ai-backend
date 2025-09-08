@@ -385,19 +385,21 @@ def _call_openai_for_evaluation(context: str) -> dict | None:
 
 И топ 3 сильные/слабые стороны.
 
+И red_flags (если есть): расхождение в стаже и опыте резюме и собеседования, шаблонные ответы, уклонение от вопросов
+
 ОТВЕТЬ СТРОГО В JSON ФОРМАТЕ с обязательными полями:
 - scores: объект с 5 критериями, каждый содержит score, justification, concerns
 - overall_score: число от 0 до 100 (среднее арифметическое всех scores)
 - recommendation: одно из 4 значений выше
 - strengths: массив из 3 сильных сторон
 - weaknesses: массив из 3 слабых сторон
+- red_flags: массив из красных флагов (если есть)
 """
 
         response = openai.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-5-mini",
             messages=[{"role": "user", "content": evaluation_prompt}],
             response_format={"type": "json_object"},
-            temperature=0.3,
         )
 
         evaluation = json.loads(response.choices[0].message.content)
@@ -617,6 +619,20 @@ async def _generate_and_upload_pdf_report(
         logger.error(f"[PDF_GENERATION] Error generating PDF report: {str(e)}")
 
 
+def _format_concerns_field(concerns_data) -> str:
+    """Форматирует поле concerns для сохранения как строку"""
+    if not concerns_data:
+        return ""
+    
+    if isinstance(concerns_data, list):
+        # Если это массив, объединяем элементы через запятую с переносом строки
+        return "; ".join(concerns_data)
+    elif isinstance(concerns_data, str):
+        return concerns_data
+    else:
+        return str(concerns_data)
+
+
 def _create_report_from_dict(
     interview_session_id: int, report: dict
 ) -> "InterviewReport":
@@ -633,8 +649,8 @@ def _create_report_from_dict(
         technical_skills_justification=scores.get("technical_skills", {}).get(
             "justification", ""
         ),
-        technical_skills_concerns=scores.get("technical_skills", {}).get(
-            "concerns", ""
+        technical_skills_concerns=_format_concerns_field(
+            scores.get("technical_skills", {}).get("concerns", "")
         ),
         experience_relevance_score=scores.get("experience_relevance", {}).get(
             "score", 0
@@ -642,24 +658,30 @@ def _create_report_from_dict(
         experience_relevance_justification=scores.get("experience_relevance", {}).get(
             "justification", ""
         ),
-        experience_relevance_concerns=scores.get("experience_relevance", {}).get(
-            "concerns", ""
+        experience_relevance_concerns=_format_concerns_field(
+            scores.get("experience_relevance", {}).get("concerns", "")
         ),
         communication_score=scores.get("communication", {}).get("score", 0),
         communication_justification=scores.get("communication", {}).get(
             "justification", ""
         ),
-        communication_concerns=scores.get("communication", {}).get("concerns", ""),
+        communication_concerns=_format_concerns_field(
+            scores.get("communication", {}).get("concerns", "")
+        ),
         problem_solving_score=scores.get("problem_solving", {}).get("score", 0),
         problem_solving_justification=scores.get("problem_solving", {}).get(
             "justification", ""
         ),
-        problem_solving_concerns=scores.get("problem_solving", {}).get("concerns", ""),
+        problem_solving_concerns=_format_concerns_field(
+            scores.get("problem_solving", {}).get("concerns", "")
+        ),
         cultural_fit_score=scores.get("cultural_fit", {}).get("score", 0),
         cultural_fit_justification=scores.get("cultural_fit", {}).get(
             "justification", ""
         ),
-        cultural_fit_concerns=scores.get("cultural_fit", {}).get("concerns", ""),
+        cultural_fit_concerns=_format_concerns_field(
+            scores.get("cultural_fit", {}).get("concerns", "")
+        ),
         # Агрегированные поля
         overall_score=report.get("overall_score", 0),
         recommendation=RecommendationType(report.get("recommendation", "reject")),
@@ -693,8 +715,8 @@ def _update_report_from_dict(existing_report, report: dict):
         existing_report.technical_skills_justification = scores["technical_skills"].get(
             "justification", ""
         )
-        existing_report.technical_skills_concerns = scores["technical_skills"].get(
-            "concerns", ""
+        existing_report.technical_skills_concerns = _format_concerns_field(
+            scores["technical_skills"].get("concerns", "")
         )
 
     if "experience_relevance" in scores:
@@ -704,17 +726,17 @@ def _update_report_from_dict(existing_report, report: dict):
         existing_report.experience_relevance_justification = scores[
             "experience_relevance"
         ].get("justification", "")
-        existing_report.experience_relevance_concerns = scores[
-            "experience_relevance"
-        ].get("concerns", "")
+        existing_report.experience_relevance_concerns = _format_concerns_field(
+            scores["experience_relevance"].get("concerns", "")
+        )
 
     if "communication" in scores:
         existing_report.communication_score = scores["communication"].get("score", 0)
         existing_report.communication_justification = scores["communication"].get(
             "justification", ""
         )
-        existing_report.communication_concerns = scores["communication"].get(
-            "concerns", ""
+        existing_report.communication_concerns = _format_concerns_field(
+            scores["communication"].get("concerns", "")
         )
 
     if "problem_solving" in scores:
@@ -724,8 +746,8 @@ def _update_report_from_dict(existing_report, report: dict):
         existing_report.problem_solving_justification = scores["problem_solving"].get(
             "justification", ""
         )
-        existing_report.problem_solving_concerns = scores["problem_solving"].get(
-            "concerns", ""
+        existing_report.problem_solving_concerns = _format_concerns_field(
+            scores["problem_solving"].get("concerns", "")
         )
 
     if "cultural_fit" in scores:
@@ -733,8 +755,8 @@ def _update_report_from_dict(existing_report, report: dict):
         existing_report.cultural_fit_justification = scores["cultural_fit"].get(
             "justification", ""
         )
-        existing_report.cultural_fit_concerns = scores["cultural_fit"].get(
-            "concerns", ""
+        existing_report.cultural_fit_concerns = _format_concerns_field(
+            scores["cultural_fit"].get("concerns", "")
         )
 
     # Агрегированные поля

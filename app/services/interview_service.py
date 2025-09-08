@@ -233,7 +233,7 @@ class InterviewRoomService:
             # Если плана нет, создаем базовый план на основе имеющихся данных
             fallback_plan = {
                 "interview_structure": {
-                    "duration_minutes": 30,
+                    "duration_minutes": 45,
                     "greeting": f"Привет, {resume.applicant_name}! Готов к интервью?",
                     "sections": [
                         {

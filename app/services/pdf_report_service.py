@@ -28,6 +28,21 @@ class PDFReportService:
         self.styles = getSampleStyleSheet()
         self._setup_custom_styles()
 
+    def _format_list_field(self, field_value) -> str:
+        """Форматирует поле со списком для отображения в PDF"""
+        if not field_value:
+            return "—"
+        
+        if isinstance(field_value, list):
+            # Если это список, объединяем элементы
+            return "\n• ".join([""] + field_value)
+        elif isinstance(field_value, str):
+            # Если это строка, возвращаем как есть
+            return field_value
+        else:
+            # Для других типов конвертируем в строку
+            return str(field_value)
+
     def _register_fonts(self):
         """Регистрация шрифтов для поддержки кириллицы"""
         try:
@@ -212,31 +227,31 @@ class PDFReportService:
                 Paragraph("Технические навыки", table_text_style),
                 Paragraph(f"{report.technical_skills_score}/100", table_text_style),
                 Paragraph(report.technical_skills_justification or "—", table_text_style),
-                Paragraph(report.technical_skills_concerns or "—", table_text_style),
+                Paragraph(self._format_list_field(report.technical_skills_concerns), table_text_style),
             ],
             [
                 Paragraph("Релевантность опыта", table_text_style),
                 Paragraph(f"{report.experience_relevance_score}/100", table_text_style),
                 Paragraph(report.experience_relevance_justification or "—", table_text_style),
-                Paragraph(report.experience_relevance_concerns or "—", table_text_style),
+                Paragraph(self._format_list_field(report.experience_relevance_concerns), table_text_style),
             ],
             [
                 Paragraph("Коммуникация", table_text_style),
                 Paragraph(f"{report.communication_score}/100", table_text_style),
                 Paragraph(report.communication_justification or "—", table_text_style),
-                Paragraph(report.communication_concerns or "—", table_text_style),
+                Paragraph(self._format_list_field(report.communication_concerns), table_text_style),
             ],
             [
                 Paragraph("Решение задач", table_text_style),
                 Paragraph(f"{report.problem_solving_score}/100", table_text_style),
                 Paragraph(report.problem_solving_justification or "—", table_text_style),
-                Paragraph(report.problem_solving_concerns or "—", table_text_style),
+                Paragraph(self._format_list_field(report.problem_solving_concerns), table_text_style),
             ],
             [
                 Paragraph("Культурное соответствие", table_text_style),
                 Paragraph(f"{report.cultural_fit_score}/100", table_text_style),
                 Paragraph(report.cultural_fit_justification or "—", table_text_style),
-                Paragraph(report.cultural_fit_concerns or "—", table_text_style),
+                Paragraph(self._format_list_field(report.cultural_fit_concerns), table_text_style),
             ],
         ]
 
@@ -343,15 +358,15 @@ class PDFReportService:
                 )
                 for weakness in report.weaknesses:
                     story.append(Paragraph(f"• {weakness}", self.styles["CustomBodyText"]))
-                story.append(Spacer(1, 10))
+                story.append(Spacer(1, 15))
 
         # Красные флаги
         if report.red_flags:
-            story.append(Paragraph("Важные риски:", self.styles["SubHeader"]))
+            story.append(Paragraph("Красные флаги:", self.styles["SectionHeader"]))
             for red_flag in report.red_flags:
                 story.append(
                     Paragraph(
-                        f"⚠ {red_flag}",
+                        f"{red_flag}",
                         ParagraphStyle(
                             name="RedFlag",
                             parent=self.styles["CustomBodyText"],
