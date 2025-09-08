@@ -429,7 +429,7 @@ async def entrypoint(ctx: JobContext):
         openai.TTS(
             model="tts-1-hd",
             api_key=settings.openai_api_key,
-            voice='coral'
+            voice='nova'
         )
         if settings.openai_api_key
         else silero.TTS(language="ru", model="v4_ru")
