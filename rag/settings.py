@@ -6,7 +6,7 @@ class RagSettings(BaseSettings):
     database_url: str = "postgresql+asyncpg://tdjx:1309@localhost:5432/hr_ai"
 
     # Milvus Settings
-    milvus_uri: str = "http://5.188.159.90:19530"
+    milvus_uri: str = "milvus_uri"
     milvus_collection: str = "candidate_profiles"
 
     # Redis
