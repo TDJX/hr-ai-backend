@@ -1,5 +1,4 @@
 import json
-import os
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -128,42 +127,41 @@ async def force_end_interview(session_id: int) -> dict:
     try:
         # Получаем статус агента
         agent_status = agent_manager.get_status()
-        
+
         if agent_status["status"] != "active":
             raise HTTPException(
-                status_code=400, 
-                detail=f"Agent is not active, current status: {agent_status['status']}"
+                status_code=400,
+                detail=f"Agent is not active, current status: {agent_status['status']}",
             )
-        
+
         if agent_status["session_id"] != session_id:
             raise HTTPException(
                 status_code=400,
-                detail=f"Agent is not handling session {session_id}, current session: {agent_status['session_id']}"
+                detail=f"Agent is not handling session {session_id}, current session: {agent_status['session_id']}",
             )
-        
+
         # Записываем команду завершения в файл команд
         command_file = "agent_commands.json"
         end_command = {
             "action": "end_session",
             "session_id": session_id,
             "timestamp": datetime.now(UTC).isoformat(),
-            "initiated_by": "admin_api"
+            "initiated_by": "admin_api",
         }
-        
+
         with open(command_file, "w", encoding="utf-8") as f:
             json.dump(end_command, f, ensure_ascii=False, indent=2)
-        
+
         return {
             "success": True,
             "message": f"Force end command sent for session {session_id}",
             "session_id": session_id,
-            "command_file": command_file
+            "command_file": command_file,
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=500,
-            detail=f"Failed to send force end command: {str(e)}"
+            status_code=500, detail=f"Failed to send force end command: {str(e)}"
         )

@@ -139,35 +139,72 @@ class SyncVacancyRepository:
         from app.models.vacancy import Vacancy
 
         return self.session.query(Vacancy).filter(Vacancy.id == vacancy_id).first()
-    
+
     def create_vacancy(self, vacancy_create):
         """Создать новую вакансию"""
         from datetime import datetime
+
         from app.models.vacancy import Vacancy
-        
+
         # Конвертируем VacancyCreate в dict
-        if hasattr(vacancy_create, 'dict'):
+        if hasattr(vacancy_create, "dict"):
             vacancy_data = vacancy_create.dict()
-        elif hasattr(vacancy_create, 'model_dump'):
+        elif hasattr(vacancy_create, "model_dump"):
             vacancy_data = vacancy_create.model_dump()
         else:
             vacancy_data = vacancy_create
-            
+
         # Создаем новую вакансию
         vacancy = Vacancy(
-            **vacancy_data,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
+            **vacancy_data, created_at=datetime.utcnow(), updated_at=datetime.utcnow()
         )
-        
+
         self.session.add(vacancy)
         self.session.flush()  # Получаем ID без коммита
         self.session.refresh(vacancy)  # Обновляем объект из БД
-        
+
         # Создаем простой объект с нужными данными для возврата
         class VacancyResult:
             def __init__(self, id, title):
                 self.id = id
                 self.title = title
-                
+
         return VacancyResult(vacancy.id, vacancy.title)
+
+
+class SyncInterviewReportRepository:
+    """Синхронный repository для работы с InterviewReport в Celery tasks"""
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def get_by_id(self, report_id: int):
+        """Получить отчет по ID"""
+        from app.models.interview_report import InterviewReport
+
+        return (
+            self.session.query(InterviewReport)
+            .filter(InterviewReport.id == report_id)
+            .first()
+        )
+
+    def update_pdf_url(self, report_id: int, pdf_url: str) -> bool:
+        """Обновить ссылку на PDF отчёта"""
+        from datetime import datetime
+
+        from app.models.interview_report import InterviewReport
+
+        try:
+            report = (
+                self.session.query(InterviewReport)
+                .filter(InterviewReport.id == report_id)
+                .first()
+            )
+            if report:
+                report.pdf_report_url = pdf_url
+                report.updated_at = datetime.utcnow()
+                self.session.add(report)
+                return True
+            return False
+        except Exception:
+            return False

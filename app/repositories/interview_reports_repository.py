@@ -6,8 +6,8 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
-from app.models.interview_report import InterviewReport
 from app.models.interview import InterviewSession
+from app.models.interview_report import InterviewReport
 from app.models.resume import Resume
 from app.models.vacancy import Vacancy
 from app.repositories.base_repository import BaseRepository
@@ -64,7 +64,10 @@ class InterviewReportRepository(BaseRepository[InterviewReport]):
         """Получить все отчёты по вакансии"""
         statement = (
             select(InterviewReport)
-            .join(InterviewSession, InterviewSession.id == InterviewReport.interview_session_id)
+            .join(
+                InterviewSession,
+                InterviewSession.id == InterviewReport.interview_session_id,
+            )
             .join(Resume, Resume.id == InterviewSession.resume_id)
             .join(Vacancy, Vacancy.id == Resume.vacancy_id)
             .where(Vacancy.id == vacancy_id)

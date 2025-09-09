@@ -1,3 +1,5 @@
+import asyncio
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -7,15 +9,18 @@ from app.core.session_middleware import SessionMiddleware
 from app.routers import resume_router, vacancy_router
 from app.routers.admin_router import router as admin_router
 from app.routers.analysis_router import router as analysis_router
+from app.routers.interview_reports_router import router as interview_report_router
 from app.routers.interview_router import router as interview_router
 from app.routers.session_router import router as session_router
-from app.routers.interview_reports_router import router as interview_report_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Запускаем AI агента при старте приложения
     from app.services.agent_manager import agent_manager
+
+    if sys.platform.startswith("win"):
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
     print("[STARTUP] Starting AI Agent...")
     success = await agent_manager.start_agent()
@@ -58,6 +63,7 @@ app.include_router(interview_router, prefix="/api/v1")
 app.include_router(analysis_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
 app.include_router(interview_report_router, prefix="/api/v1")
+
 
 @app.get("/")
 async def root():

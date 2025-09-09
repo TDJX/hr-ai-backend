@@ -18,7 +18,7 @@ if os.name == "nt":  # Windows
 
 from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli
 from livekit.api import DeleteRoomRequest, LiveKitAPI
-from livekit.plugins import cartesia, deepgram, openai, silero
+from livekit.plugins import openai, silero
 
 from app.core.database import get_session
 from app.repositories.interview_repository import InterviewRepository
@@ -63,10 +63,10 @@ class InterviewAgent:
         self.last_user_response = None
         self.intro_done = False  # Новый флаг — произнесено ли приветствие
         self.interview_finalized = False  # Флаг завершения интервью
-        
+
         # Трекинг времени интервью
         self.interview_start_time = None  # Устанавливается при фактическом старте
-        self.interview_end_time = None    # Устанавливается при завершении
+        self.interview_end_time = None  # Устанавливается при завершении
         self.duration_minutes = interview_plan.get("interview_structure", {}).get(
             "duration_minutes", 10
         )
@@ -123,7 +123,7 @@ class InterviewAgent:
         # Вычисляем текущее время интервью
         time_info = self.get_time_info()
         elapsed_minutes = time_info["elapsed_minutes"]
-        remaining_minutes = time_info["remaining_minutes"] 
+        remaining_minutes = time_info["remaining_minutes"]
         time_percentage = time_info["time_percentage"]
 
         # Формируем план интервью для агента
@@ -154,40 +154,41 @@ class InterviewAgent:
         if self.vacancy_data:
             employment_type_map = {
                 "full": "Полная занятость",
-                "part": "Частичная занятость", 
+                "part": "Частичная занятость",
                 "project": "Проектная работа",
                 "volunteer": "Волонтёрство",
-                "probation": "Стажировка"
+                "probation": "Стажировка",
             }
             experience_map = {
                 "noExperience": "Без опыта",
                 "between1And3": "1-3 года",
-                "between3And6": "3-6 лет", 
-                "moreThan6": "Более 6 лет"
+                "between3And6": "3-6 лет",
+                "moreThan6": "Более 6 лет",
             }
             schedule_map = {
                 "fullDay": "Полный день",
                 "shift": "Сменный график",
                 "flexible": "Гибкий график",
                 "remote": "Удалённая работа",
-                "flyInFlyOut": "Вахтовый метод"
+                "flyInFlyOut": "Вахтовый метод",
             }
-            
+
             vacancy_info = f"""
 
 ИНФОРМАЦИЯ О ВАКАНСИИ:
-- Должность: {self.vacancy_data.get('title', 'Не указана')}
-- Описание: {self.vacancy_data.get('description', 'Не указано')}
-- Ключевые навыки: {self.vacancy_data.get('key_skills') or 'Не указаны'}
-- Тип занятости: {employment_type_map.get(self.vacancy_data.get('employment_type'), self.vacancy_data.get('employment_type', 'Не указан'))}
-- Опыт работы: {experience_map.get(self.vacancy_data.get('experience'), self.vacancy_data.get('experience', 'Не указан'))}
-- График работы: {schedule_map.get(self.vacancy_data.get('schedule'), self.vacancy_data.get('schedule', 'Не указан'))}
-- Регион: {self.vacancy_data.get('area_name', 'Не указан')}
-- Профессиональные роли: {self.vacancy_data.get('professional_roles') or 'Не указаны'}
-- Контактное лицо: {self.vacancy_data.get('contacts_name') or 'Не указано'}"""
+- Должность: {self.vacancy_data.get("title", "Не указана")}
+- Описание: {self.vacancy_data.get("description", "Не указано")}
+- Ключевые навыки: {self.vacancy_data.get("key_skills") or "Не указаны"}
+- Тип занятости: {employment_type_map.get(self.vacancy_data.get("employment_type"), self.vacancy_data.get("employment_type", "Не указан"))}
+- Опыт работы: {experience_map.get(self.vacancy_data.get("experience"), self.vacancy_data.get("experience", "Не указан"))}
+- График работы: {schedule_map.get(self.vacancy_data.get("schedule"), self.vacancy_data.get("schedule", "Не указан"))}
+- Регион: {self.vacancy_data.get("area_name", "Не указан")}
+- Профессиональные роли: {self.vacancy_data.get("professional_roles") or "Не указаны"}
+- Контактное лицо: {self.vacancy_data.get("contacts_name") or "Не указано"}"""
 
         return f"""
-Ты опытный HR-интервьюер Стефани, который проводит адаптивное голосовое собеседование. Представься контактным именем из вакансии (если оно есть)
+Ты опытный HR-интервьюер Стефани, который проводит адаптивное голосовое собеседование. Представься как Стефани
+Разговаривай только на русском языке.
 
 ИНФОРМАЦИЯ О ВАКАНСИИ:
 
@@ -197,6 +198,7 @@ class InterviewAgent:
 - Имя: {candidate_name}
 - Опыт работы: {candidate_years} лет
 - Ключевые навыки: {candidate_skills}
+Из имени определи пол и упоминай кандидата исходя из пола
 
 ЦЕЛЬ ИНТЕРВЬЮ:
 
@@ -213,7 +215,7 @@ class InterviewAgent:
 - Способность учиться и адаптироваться.
 - Совпадение ценностей и принципов с командой и компанией.
 
-ПЛАН ИНТЕРВЬЮ (как руководство, адаптируйся по ситуации)
+ПЛАН ИНТЕРВЬЮ (имей его ввиду, но адаптируйся под ситуацию: либо углубиться в детали, либо перейти к следующему вопросу)
 
 {sections_info}
 
@@ -227,9 +229,8 @@ class InterviewAgent:
 Проблемные / кейсы (20%) — проверить мышление и подход к решению.
 Пример: "У нас есть система, которая падает раз в неделю. Как бы ты подошёл к диагностике проблемы?"
 
-Задавай вопросы кратко и понятно. Не вываливай кучу информации на человека.
+Задавай вопросы кратко и понятно (максимум тремя предложениями). Не вываливай кучу информации на кандидата.
 Не перечисляй человеку все пункты и вопросы из секции. Предлагай один общий вопрос или задавай уточняющие по по очереди.
-Ты должна спрашивать вопросы максимум в 3 предложения
 
 ВРЕМЯ ИНТЕРВЬЮ:
 - Запланированная длительность: {self.duration_minutes} минут
@@ -251,7 +252,7 @@ class InterviewAgent:
 ИНСТРУКЦИИ:
 1. Начни с приветствия: {greeting}
 2. Адаптируй вопросы под ответы кандидата
-3. Не повторяй то, что клиент тебе сказал, лучше показывай, что понял, услышал и иди дальше. Лишний раз его не хвали
+3. Не повторяй то, что клиент тебе сказал, лучше показывай, что поняла, услышала, и иди дальше. Лишний раз его не хвали
 3. Следи за временем - при превышении 80% времени начинай завершать интервью
 4. Оценивай качество и глубину ответов кандидата
 5. Если получаешь сообщение "[СИСТЕМА] Клиент молчит..." - это означает проблемы со связью или кандидат растерялся. Скажи что-то вроде "Приём! Ты меня слышишь?" или "Всё в порядке? Связь не пропала?"
@@ -282,7 +283,6 @@ class InterviewAgent:
 
     def get_time_info(self) -> dict[str, float]:
         """Получает информацию о времени интервью"""
-        import time
 
         if self.interview_start_time is None:
             # Интервью еще не началось
@@ -294,7 +294,9 @@ class InterviewAgent:
             current_time = self.interview_end_time or time.time()
             elapsed_minutes = (current_time - self.interview_start_time) / 60
             remaining_minutes = max(0.0, self.duration_minutes - elapsed_minutes)
-            time_percentage = min(100.0, (elapsed_minutes / self.duration_minutes) * 100)
+            time_percentage = min(
+                100.0, (elapsed_minutes / self.duration_minutes) * 100
+            )
 
         return {
             "elapsed_minutes": elapsed_minutes,
@@ -366,7 +368,9 @@ async def entrypoint(ctx: JobContext):
                 session_id = metadata.get("session_id", session_id)
                 logger.info(f"[INIT] Loaded interview plan for session {session_id}")
                 if vacancy_data:
-                    logger.info(f"[INIT] Loaded vacancy data from metadata: {vacancy_data.get('title', 'Unknown')}")
+                    logger.info(
+                        f"[INIT] Loaded vacancy data from metadata: {vacancy_data.get('title', 'Unknown')}"
+                    )
         except Exception as e:
             logger.warning(f"[INIT] Failed to load metadata: {str(e)}")
             interview_plan = {}
@@ -409,42 +413,24 @@ async def entrypoint(ctx: JobContext):
     )
 
     # STT
-    stt = (
-        openai.STT(
-            model="whisper-1", language="ru", api_key=settings.openai_api_key
-        )
-        if settings.openai_api_key
-        else openai.STT(
-            model="whisper-1", language="ru", api_key=settings.openai_api_key
-        )
-    )
+    stt = openai.STT(model="whisper-1", language="ru", api_key=settings.openai_api_key)
 
     # LLM
-    llm = openai.LLM(
-        model="gpt-5-mini", api_key=settings.openai_api_key
-    )
+    llm = openai.LLM(model="gpt-5-mini", api_key=settings.openai_api_key)
 
     # TTS
-    tts = (
-        openai.TTS(
-            model="tts-1-hd",
-            api_key=settings.openai_api_key,
-            voice='nova'
-        )
-        if settings.openai_api_key
-        else silero.TTS(language="ru", model="v4_ru")
-    )
+    tts = openai.TTS(model="tts-1-hd", api_key=settings.openai_api_key, voice="nova")
 
     # Создаем обычный Agent и Session
     agent = Agent(instructions=interviewer.get_system_instructions())
 
     # Создаем AgentSession с обычным TTS и детекцией неактивности пользователя
     session = AgentSession(
-        vad=silero.VAD.load(), 
-        stt=stt, 
-        llm=llm, 
+        vad=silero.VAD.load(),
+        stt=stt,
+        llm=llm,
         tts=tts,
-        user_away_timeout=7.0  # 7 секунд неактивности для срабатывания away
+        user_away_timeout=7.0,  # 7 секунд неактивности для срабатывания away
     )
 
     # --- Сохранение диалога в БД ---
@@ -480,18 +466,23 @@ async def entrypoint(ctx: JobContext):
             return
 
         interviewer_instance.interview_finalized = True
-        
+
         # Устанавливаем время завершения интервью
-        import time
+
         interviewer_instance.interview_end_time = time.time()
-        
+
         if interviewer_instance.interview_start_time:
-            total_minutes = (interviewer_instance.interview_end_time - interviewer_instance.interview_start_time) / 60
+            total_minutes = (
+                interviewer_instance.interview_end_time
+                - interviewer_instance.interview_start_time
+            ) / 60
             logger.info(
                 f"[TIME] Interview ended at {time.strftime('%H:%M:%S')}, total duration: {total_minutes:.1f} min"
             )
         else:
-            logger.info(f"[TIME] Interview ended at {time.strftime('%H:%M:%S')} (no start time recorded)")
+            logger.info(
+                f"[TIME] Interview ended at {time.strftime('%H:%M:%S')} (no start time recorded)"
+            )
 
         try:
             logger.info(
@@ -553,9 +544,7 @@ async def entrypoint(ctx: JobContext):
                 )
 
                 if not interviewer.interview_finalized:
-                    await complete_interview_sequence(
-                        ctx.room.name, interviewer
-                    )
+                    await complete_interview_sequence(ctx.room.name, interviewer)
                     break
 
         return False
@@ -595,7 +584,7 @@ async def entrypoint(ctx: JobContext):
                             f"[TIME_LIMIT] Interview exceeded {TIME_LIMIT_MINUTES} minutes "
                             f"({time_info['elapsed_minutes']:.1f} min), forcing completion"
                         )
-                        
+
                         if not interviewer.interview_finalized:
                             await complete_interview_sequence(
                                 ctx.room.name, interviewer
@@ -610,18 +599,19 @@ async def entrypoint(ctx: JobContext):
 
     # Запускаем мониторинг команд в фоне
     asyncio.create_task(monitor_end_commands())
-    
+
     @session.on("user_state_changed")
     def on_user_state_changed(event):
         """Обработчик изменения состояния пользователя (активен/неактивен)"""
-        
-        async def on_change():
 
+        async def on_change():
             logger.info(f"[USER_STATE] User state changed to: {event.new_state}")
 
             # === Пользователь молчит более 10 секунд (state == away) ===
             if event.new_state == "away" and interviewer.intro_done:
-                logger.info("[USER_STATE] User away detected, sending check-in message...")
+                logger.info(
+                    "[USER_STATE] User away detected, sending check-in message..."
+                )
 
                 # сообщение — проверка связи
                 await session.generate_reply(
@@ -673,21 +663,18 @@ async def entrypoint(ctx: JobContext):
                 "room_name": room_name,
                 "timestamp": datetime.now(UTC).isoformat(),
             }
-            
+
             with open(command_file, "w", encoding="utf-8") as f:
                 json.dump(release_command, f, ensure_ascii=False, indent=2)
-                
+
             logger.info(f"[SEQUENCE] Step 3: Session {session_id} release signal sent")
-            
+
         except Exception as e:
             logger.error(f"[SEQUENCE] Step 3: Failed to send release signal: {str(e)}")
             logger.info("[SEQUENCE] Step 3: Continuing without release signal")
 
-
-    
     # --- Упрощенная логика обработки пользовательского ответа ---
     async def handle_user_input(user_response: str):
-        
         current_section = interviewer.get_current_section()
 
         # Сохраняем ответ пользователя
@@ -707,6 +694,7 @@ async def entrypoint(ctx: JobContext):
             interviewer.intro_done = True
             # Устанавливаем время начала интервью при первом сообщении
             import time
+
             interviewer.interview_start_time = time.time()
             logger.info(
                 f"[TIME] Interview started at {time.strftime('%H:%M:%S')}, duration: {interviewer.duration_minutes} min"
@@ -734,7 +722,6 @@ async def entrypoint(ctx: JobContext):
         if role == "user":
             asyncio.create_task(handle_user_input(text))
         elif role == "assistant":
-            
             # Сохраняем ответ агента в историю диалога
             current_section = interviewer.get_current_section()
             interviewer.conversation_history.append(

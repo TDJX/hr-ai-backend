@@ -38,11 +38,16 @@ class InterviewSession(InterviewSessionBase, table=True):
     id: int | None = Field(default=None, primary_key=True)
     started_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: datetime | None = None
+    interview_start_time: datetime | None = None
+    interview_end_time: datetime | None = None
 
     # Связь с отчетом (один к одному)
     report: Optional["InterviewReport"] = Relationship(
         back_populates="interview_session"
     )
+
+    # Связь с резюме
+    resume: Optional["Resume"] = Relationship()
 
 
 class InterviewSessionCreate(SQLModel):

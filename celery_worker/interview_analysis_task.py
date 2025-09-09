@@ -108,6 +108,7 @@ def generate_interview_report(resume_id: int):
                         report_instance,
                         resume.applicant_name,
                         vacancy.get("title", "Unknown Position"),
+                        resume.resume_file_url,
                     )
                 )
 
@@ -321,8 +322,6 @@ def _prepare_analysis_context(
 
     # Формируем контекст
     context = f"""
-АНАЛИЗ КАНДИДАТА НА СОБЕСЕДОВАНИЕ
-
 ВАКАНСИЯ:
 - Позиция: {vacancy.get("title", "Не указана")}
 - Описание: {vacancy.get("description", "Не указано")[:500]}
@@ -337,10 +336,10 @@ def _prepare_analysis_context(
 - Образование: {parsed_resume.get("education", "Не указано")}
 - Предыдущие позиции: {"; ".join([pos.get("title", "") + " в " + pos.get("company", "") for pos in parsed_resume.get("work_experience", [])])}
 
-ПЛАН ИНТЕРВЬЮ:
+ПЛАН СОБЕСЕДОВАНИЯ:
 {json.dumps(interview_plan, ensure_ascii=False, indent=2) if interview_plan else "План интервью не найден"}
 
-ДИАЛОГ ИНТЕРВЬЮ:
+ДИАЛОГ СОБЕСЕДОВАНИЯ:
 {dialogue_text if dialogue_text else "Диалог интервью не найден или пуст"}
 """
 
@@ -363,11 +362,15 @@ def _call_openai_for_evaluation(context: str) -> dict | None:
 {context}
 
 ЗАДАЧА:
-Проанализируй кандидата и дай оценку по критериям (0-100):
-1. technical_skills: Соответствие техническим требованиям
-2. experience_relevance: Релевантность опыта
-3. communication: Коммуникативные навыки (на основе диалога)
-4. problem_solving: Навыки решения задач
+Проанализируй ДИАЛОГ с кандидатом. Если кандидат ответил на вопросы и подтвердил знания из резюме, то только тогда можно считать его навыки резюме подтвержденными
+и можно оценивать их соответствие вакансионным требованиям. Если клиент уклонялся от вопросов или закончил интервью раньше (или диалог выглядит неполным исходя из плана, хотя интервьюер адаптирует план и сторого ему не следует),
+чем это сделал сам интервьюер, то навыки не считаются подтвержденными и по ним нельзя оценивать кандидата
+
+Дай оценку по критериям (0-100):
+1. technical_skills: Соответствие диалога (и резюме если диалог подтверждает) техническим требованиям вакансии
+2. experience_relevance: Релевантность опыта судя по диалогу (и резюме если диалог подтверждает)
+3. communication: Коммуникативные навыки на основе диалога
+4. problem_solving: Навыки решения задач на основе диалога
 5. cultural_fit: Соответствие корпоративной культуре
 
 Для каждого критерия:
@@ -587,19 +590,27 @@ def _save_report_to_db(db, resume_id: int, report: dict):
 
 
 async def _generate_and_upload_pdf_report(
-    db, report_instance: "InterviewReport", candidate_name: str, position: str
+    db,
+    report_instance: "InterviewReport",
+    candidate_name: str,
+    position: str,
+    resume_file_url: str = None,
 ):
     """Генерирует PDF отчет и загружает его в S3"""
     try:
+
         from app.services.pdf_report_service import pdf_report_service
 
         logger.info(
             f"[PDF_GENERATION] Starting PDF generation for report ID: {report_instance.id}"
         )
 
-        # Генерируем и загружаем PDF
+        # Генерируем и загружаем PDF - используем переданные параметры как в старой версии
         pdf_url = await pdf_report_service.generate_and_upload_pdf(
-            report=report_instance, candidate_name=candidate_name, position=position
+            report=report_instance,
+            candidate_name=candidate_name,
+            position=position,
+            resume_file_url=resume_file_url,
         )
 
         if pdf_url:
@@ -623,7 +634,7 @@ def _format_concerns_field(concerns_data) -> str:
     """Форматирует поле concerns для сохранения как строку"""
     if not concerns_data:
         return ""
-    
+
     if isinstance(concerns_data, list):
         # Если это массив, объединяем элементы через запятую с переносом строки
         return "; ".join(concerns_data)

@@ -10,7 +10,9 @@ from app.repositories.interview_reports_repository import InterviewReportReposit
 class InterviewReportService:
     def __init__(
         self,
-        report_repo: Annotated[InterviewReportRepository, Depends(InterviewReportRepository)],
+        report_repo: Annotated[
+            InterviewReportRepository, Depends(InterviewReportRepository)
+        ],
     ):
         self.report_repo = report_repo
 
@@ -22,9 +24,7 @@ class InterviewReportService:
         """Получить все отчёты по вакансии"""
         return await self.report_repo.get_by_vacancy_id(vacancy_id)
 
-    async def update_report_scores(
-        self, report_id: int, scores: dict
-    ) -> bool:
+    async def update_report_scores(self, report_id: int, scores: dict) -> bool:
         """
         Обновить оценки отчёта.
         Пример scores:

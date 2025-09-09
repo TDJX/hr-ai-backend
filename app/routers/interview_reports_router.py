@@ -1,15 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
-from typing import List
+
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.session_middleware import get_current_session
-from app.models.session import Session
 from app.models.interview_report import InterviewReport
+from app.models.session import Session
 from app.services.interview_reports_service import InterviewReportService
 
 router = APIRouter(prefix="/interview-reports", tags=["interview-reports"])
 
 
-@router.get("/vacancy/{vacancy_id}", response_model=List[InterviewReport])
+@router.get("/vacancy/{vacancy_id}", response_model=list[InterviewReport])
 async def get_reports_by_vacancy(
     vacancy_id: int,
     current_session: Session = Depends(get_current_session),

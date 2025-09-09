@@ -31,9 +31,7 @@ class ModelRegistry:
         """Получить или создать chat модель"""
         if self._chat_model is None:
             if settings.openai_api_key:
-                llm = ChatOpenAI(
-                    api_key=settings.openai_api_key, model="gpt-5-mini"
-                )
+                llm = ChatOpenAI(api_key=settings.openai_api_key, model="gpt-5-mini")
                 self._chat_model = ChatModel(llm)
             else:
                 raise ValueError("OpenAI API key не настроен в settings")

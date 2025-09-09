@@ -18,7 +18,11 @@ class S3Service:
         self.bucket_name = settings.s3_bucket_name
 
     async def upload_file(
-        self, file_content: bytes, file_name: str, content_type: str, public: bool = False
+        self,
+        file_content: bytes,
+        file_name: str,
+        content_type: str,
+        public: bool = False,
     ) -> str | None:
         try:
             file_key = f"{uuid.uuid4()}_{file_name}"
@@ -29,13 +33,15 @@ class S3Service:
                 "Body": file_content,
                 "ContentType": content_type,
             }
-            
+
             if public:
                 put_object_kwargs["ACL"] = "public-read"
-            
+
             self.s3_client.put_object(**put_object_kwargs)
 
-            file_url = f"https://d8d88bee-afd2-4266-8332-538389e25f52.selstorage.ru/{file_key}"
+            file_url = (
+                f"https://d8d88bee-afd2-4266-8332-538389e25f52.selstorage.ru/{file_key}"
+            )
             return file_url
 
         except ClientError as e:

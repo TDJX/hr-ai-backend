@@ -581,10 +581,12 @@ def generate_interview_questions_task(self, resume_id: str, job_description: str
 
 
 @celery_app.task(bind=True)
-def parse_vacancy_task(self, file_content_base64: str, filename: str, create_vacancy: bool = False):
+def parse_vacancy_task(
+    self, file_content_base64: str, filename: str, create_vacancy: bool = False
+):
     """
     Асинхронная задача парсинга вакансии из файла
-    
+
     Args:
         file_content_base64: Содержимое файла в base64
         filename: Имя файла для определения формата
@@ -592,64 +594,73 @@ def parse_vacancy_task(self, file_content_base64: str, filename: str, create_vac
     """
     try:
         import base64
-        from app.services.vacancy_parser_service import vacancy_parser_service
+
         from app.models.vacancy import VacancyCreate
-        
+        from app.services.vacancy_parser_service import vacancy_parser_service
+
         # Обновляем статус задачи
         self.update_state(
             state="PENDING",
-            meta={"status": "Начинаем парсинг вакансии...", "progress": 10}
+            meta={"status": "Начинаем парсинг вакансии...", "progress": 10},
         )
-        
+
         # Декодируем содержимое файла
         file_content = base64.b64decode(file_content_base64)
-        
+
         # Шаг 1: Извлечение текста из файла
         self.update_state(
             state="PROGRESS",
-            meta={"status": "Извлекаем текст из файла...", "progress": 30}
+            meta={"status": "Извлекаем текст из файла...", "progress": 30},
         )
-        
+
         raw_text = vacancy_parser_service.extract_text_from_file(file_content, filename)
-        
+
         if not raw_text.strip():
             raise ValueError("Не удалось извлечь текст из файла")
-        
+
         # Шаг 2: Парсинг с помощью AI
         self.update_state(
-            state="PROGRESS", 
-            meta={"status": "Обрабатываем текст с помощью AI...", "progress": 70}
+            state="PROGRESS",
+            meta={"status": "Обрабатываем текст с помощью AI...", "progress": 70},
         )
-        
+
         import asyncio
-        parsed_data = asyncio.run(vacancy_parser_service.parse_vacancy_with_ai(raw_text))
-        
+
+        parsed_data = asyncio.run(
+            vacancy_parser_service.parse_vacancy_with_ai(raw_text)
+        )
+
         # Шаг 3: Создание вакансии (если требуется)
         created_vacancy = None
-        print(f"create_vacancy parameter: {create_vacancy}, type: {type(create_vacancy)}")
-        
+        print(
+            f"create_vacancy parameter: {create_vacancy}, type: {type(create_vacancy)}"
+        )
+
         if create_vacancy:
             self.update_state(
                 state="PROGRESS",
-                meta={"status": "Создаем вакансию в базе данных...", "progress": 90}
+                meta={"status": "Создаем вакансию в базе данных...", "progress": 90},
             )
-            
+
             try:
                 print(f"Parsed data for vacancy creation: {parsed_data}")
                 vacancy_create = VacancyCreate(**parsed_data)
                 print(f"VacancyCreate object created successfully: {vacancy_create}")
-                
+
                 with get_sync_session() as session:
                     vacancy_repo = SyncVacancyRepository(session)
                     created_vacancy = vacancy_repo.create_vacancy(vacancy_create)
-                    print(f"Vacancy created with ID: {created_vacancy.id if created_vacancy else 'None'}")
-                    
+                    print(
+                        f"Vacancy created with ID: {created_vacancy.id if created_vacancy else 'None'}"
+                    )
+
             except Exception as e:
                 import traceback
+
                 error_details = traceback.format_exc()
                 print(f"Error creating vacancy: {str(e)}")
                 print(f"Full traceback: {error_details}")
-                
+
                 # Возвращаем парсинг, но предупреждаем об ошибке создания
                 self.update_state(
                     state="SUCCESS",
@@ -657,38 +668,38 @@ def parse_vacancy_task(self, file_content_base64: str, filename: str, create_vac
                         "status": f"Парсинг выполнен, но ошибка при создании вакансии: {str(e)}",
                         "progress": 100,
                         "result": parsed_data,
-                        "warning": f"Ошибка создания вакансии: {str(e)}"
-                    }
+                        "warning": f"Ошибка создания вакансии: {str(e)}",
+                    },
                 )
-                
+
                 return {
                     "status": "parsed_with_warning",
                     "parsed_data": parsed_data,
-                    "warning": f"Ошибка при создании вакансии: {str(e)}"
+                    "warning": f"Ошибка при создании вакансии: {str(e)}",
                 }
-        
+
         # Завершено успешно
         response_message = "Парсинг выполнен успешно"
         if created_vacancy:
             response_message += f". Вакансия создана с ID: {created_vacancy.id}"
-            
+
         self.update_state(
             state="SUCCESS",
             meta={
                 "status": response_message,
                 "progress": 100,
                 "result": parsed_data,
-                "vacancy_id": created_vacancy.id if created_vacancy else None
-            }
+                "vacancy_id": created_vacancy.id if created_vacancy else None,
+            },
         )
-        
+
         return {
             "status": "completed",
             "parsed_data": parsed_data,
             "vacancy_id": created_vacancy.id if created_vacancy else None,
-            "message": response_message
+            "message": response_message,
         }
-        
+
     except Exception as e:
         # В случае ошибки
         self.update_state(
@@ -696,8 +707,150 @@ def parse_vacancy_task(self, file_content_base64: str, filename: str, create_vac
             meta={
                 "status": f"Ошибка при парсинге вакансии: {str(e)}",
                 "progress": 0,
-                "error": str(e)
-            }
+                "error": str(e),
+            },
         )
-        
+
         raise Exception(f"Ошибка при парсинге вакансии: {str(e)}")
+
+
+@celery_app.task(bind=True)
+def generate_pdf_report_task(
+    self,
+    report_data: dict,
+    candidate_name: str = None,
+    position: str = None,
+    resume_file_url: str = None,
+):
+    """
+    Асинхронная задача для генерации PDF отчета по интервью
+
+    Args:
+        report_data: Словарь с данными отчета InterviewReport
+        candidate_name: Имя кандидата
+        position: Позиция
+        resume_file_url: URL резюме
+    """
+    try:
+        import asyncio
+
+        from app.models.interview_report import InterviewReport
+        from app.services.pdf_report_service import pdf_report_service
+        from celery_worker.database import (
+            SyncInterviewReportRepository,
+            get_sync_session,
+        )
+
+        # Обновляем статус задачи
+        self.update_state(
+            state="PENDING",
+            meta={"status": "Начинаем генерацию PDF отчета...", "progress": 10},
+        )
+
+        # Создаем объект InterviewReport из переданных данных
+        self.update_state(
+            state="PROGRESS",
+            meta={"status": "Подготавливаем данные отчета...", "progress": 20},
+        )
+
+        # Подготавливаем данные для создания объекта
+        clean_report_data = report_data.copy()
+        
+        # Обрабатываем datetime поля - убираем их, так как они не нужны для создания mock объекта
+        clean_report_data.pop('created_at', None)
+        clean_report_data.pop('updated_at', None)
+        
+        # Создаем объект InterviewReport с обработанными данными
+        mock_report = InterviewReport(**clean_report_data)
+
+        # Генерируем PDF
+        self.update_state(
+            state="PROGRESS", meta={"status": "Генерируем PDF отчет...", "progress": 40}
+        )
+
+        # Запускаем асинхронную функцию в новом цикле событий
+        def run_pdf_generation():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(
+                    pdf_report_service.generate_pdf_report(
+                        mock_report, candidate_name, position, resume_file_url
+                    )
+                )
+            finally:
+                loop.close()
+
+        pdf_bytes = run_pdf_generation()
+
+        # Загружаем в S3
+        self.update_state(
+            state="PROGRESS",
+            meta={"status": "Загружаем PDF в хранилище...", "progress": 80},
+        )
+
+        def run_s3_upload():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                # Создаем имя файла
+                safe_name = (
+                    candidate_name
+                    if candidate_name and candidate_name != "Не указано"
+                    else "candidate"
+                )
+                safe_name = "".join(
+                    c for c in safe_name if c.isalnum() or c in (" ", "-", "_")
+                ).strip()
+                report_id = report_data.get("id")
+                filename = f"interview_report_{safe_name}_{report_id}.pdf"
+
+                return loop.run_until_complete(
+                    pdf_report_service.upload_pdf_to_s3(pdf_bytes, filename)
+                )
+            finally:
+                loop.close()
+
+        pdf_url = run_s3_upload()
+
+        # Обновляем отчет с URL PDF файла
+        self.update_state(
+            state="PROGRESS",
+            meta={"status": "Сохраняем ссылку на отчет...", "progress": 90},
+        )
+
+        report_id = report_data.get("id")
+        with get_sync_session() as session:
+            report_repo = SyncInterviewReportRepository(session)
+            report_repo.update_pdf_url(report_id, pdf_url)
+
+        # Завершено успешно
+        self.update_state(
+            state="SUCCESS",
+            meta={
+                "status": "PDF отчет успешно сгенерирован",
+                "progress": 100,
+                "pdf_url": pdf_url,
+                "file_size": len(pdf_bytes),
+            },
+        )
+
+        return {
+            "interview_report_id": report_id,
+            "status": "completed",
+            "pdf_url": pdf_url,
+            "file_size": len(pdf_bytes),
+        }
+
+    except Exception as e:
+        # В случае ошибки
+        self.update_state(
+            state="FAILURE",
+            meta={
+                "status": f"Ошибка при генерации PDF: {str(e)}",
+                "progress": 0,
+                "error": str(e),
+            },
+        )
+
+        raise Exception(f"Ошибка при генерации PDF: {str(e)}")
